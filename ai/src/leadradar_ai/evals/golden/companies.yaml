@@ -1,0 +1,34 @@
+# Companies of the golden set and the parser fixture each one is analysed on (fixtures: ai/tests/fixtures).
+# Employee counts are approximate: they only affect Fit and size rules.
+- domain: dhl.com
+  name: DHL Group
+  fixture: dhl.jsonl
+  aliases: [Deutsche Post, Deutsche Post DHL, DHL]
+  own_domains: [group.dhl.com, dhl.de]
+  country: DE
+  industries: [logistics, postal_courier]
+  employees: 590000
+- domain: lufthansagroup.com
+  name: Lufthansa Group
+  fixture: lufthansa.jsonl
+  aliases: [Deutsche Lufthansa, Lufthansa]
+  own_domains: [lufthansa.com]
+  country: DE
+  industries: [airlines]
+  employees: 100000
+- domain: sap.com
+  name: SAP
+  fixture: sap.jsonl
+  aliases: [SAP SE]
+  country: DE
+  industries: [software]
+  employees: 100000
+  note: vendor trap — sells automation, must be flagged, not treated as a buyer
+- domain: orange.com
+  name: Orange SA
+  fixture: orange.jsonl
+  aliases: [Orange]
+  country: FR
+  industries: [telecom]
+  employees: 130000
+  note: homonym trap — news about other "Orange" organisations must be rejected (wrong_subject)

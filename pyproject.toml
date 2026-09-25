@@ -3,6 +3,12 @@ name = "leadradar-backend-workspace"
 version = "0.1.0"
 requires-python = ">=3.12,<3.14"
 
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["parser", "ai", "auth", "core"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
@@ -13,19 +19,16 @@ dev = [
     "respx>=0.22.0",
 ]
 
-[tool.uv.workspace]
-members = ["parser", "backend/ai", "backend/auth", "backend/backend"]
-
 [tool.pytest.ini_options]
 addopts = "-ra"
 asyncio_mode = "auto"
 markers = [
-    "live: network tests (disabled in normal test runs)",
+    "live: tests that access public network services",
 ]
 testpaths = [
-    "backend/backend/tests",
-    "backend/auth/tests",
-    "backend/ai/tests",
+    "core/tests",
+    "auth/tests",
+    "ai/tests",
     "parser/tests",
 ]
 
@@ -36,7 +39,7 @@ exclude = [
     ".git",
     ".venv",
     "__pycache__",
-    "backend/backend/migrations",
+    "core/migrations",
     "*.md",
     "**/*.md",
 ]
@@ -50,8 +53,9 @@ ignore = ["E501"]
 allowed-confusables = ["×", "−"]
 
 [tool.ruff.lint.per-file-ignores]
-"backend/ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
-"backend/ai/tests/test_verification.py" = ["RUF001"]
+# the quote verifier normalizes exactly these typographic characters, and its tests use them
+"ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
+"ai/tests/test_verification.py" = ["RUF001"]
 
 [tool.importlinter]
 root_packages = ["leadradar_parser", "leadradar_ai", "leadradar_auth", "leadradar_core"]

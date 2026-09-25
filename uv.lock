@@ -1123,7 +1123,7 @@ wheels = [
 [[package]]
 name = "leadradar-ai"
 version = "0.1.0"
-source = { editable = "backend/ai" }
+source = { editable = "ai" }
 dependencies = [
     { name = "fastembed" },
     { name = "google-genai" },
@@ -1168,7 +1168,7 @@ dev = [{ name = "pytest", specifier = ">=8.3" }]
 [[package]]
 name = "leadradar-auth"
 version = "0.1.0"
-source = { editable = "backend/auth" }
+source = { editable = "auth" }
 dependencies = [
     { name = "fastapi" },
     { name = "pwdlib", extra = ["argon2"] },
@@ -1220,7 +1220,7 @@ dev = [
 [[package]]
 name = "leadradar-core"
 version = "0.1.0"
-source = { editable = "backend/backend" }
+source = { editable = "core" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
@@ -1248,8 +1248,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "leadradar-ai", editable = "backend/ai" },
-    { name = "leadradar-auth", editable = "backend/auth" },
+    { name = "leadradar-ai", editable = "ai" },
+    { name = "leadradar-auth", editable = "auth" },
     { name = "leadradar-parser", editable = "parser" },
     { name = "pgvector", specifier = ">=0.3.0" },
     { name = "pydantic", specifier = ">=2.7.0" },

@@ -38,7 +38,7 @@ services:
     profiles: ["tools"]
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile
     environment:
       PARSER_USER_AGENT: ${PARSER_USER_AGENT:-LeadRadarBot/0.1 (+https://example.invalid/bot; engineering@example.invalid)}
       PARSER_ADAPTERS: ${PARSER_ADAPTERS:-gdelt,website,jobs_ats,careers_html,wikidata}
