@@ -28,6 +28,8 @@ def build_config(
         thinking_config=(
             types.ThinkingConfig(thinking_level=_THINKING_LEVELS[thinking]) if thinking != "default" else None
         ),
+        # no tools are passed; AFC off also silences the SDK's AFC warning on every call
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
 

@@ -325,6 +325,7 @@ def test_build_config_uses_json_schema_and_no_sampling_params():
     assert config.thinking_config.thinking_level == types.ThinkingLevel.MINIMAL
     assert config.temperature is None and config.top_p is None and config.top_k is None
     assert build_config("sys", Output, "default").thinking_config is None
+    assert config.automatic_function_calling.disable is True
 
 
 def test_api_error_mapping():

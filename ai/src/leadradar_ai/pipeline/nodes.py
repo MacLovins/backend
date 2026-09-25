@@ -26,7 +26,7 @@ from leadradar_ai.contracts import (
     StageStatus,
     StepError,
 )
-from leadradar_ai.errors import QuotaExhausted
+from leadradar_ai.errors import LeadRadarAIError, QuotaExhausted
 from leadradar_ai.extraction.extract import PROMPT_VERSION, extract_service
 from leadradar_ai.pipeline.deps import AnalysisDeps
 from leadradar_ai.pipeline.state import AnalysisState, ServiceOutcome, ServiceState
@@ -194,7 +194,15 @@ class Nodes:
                         "outcomes": [ServiceOutcome(service_id=service_id, status="paused")],
                     }
                 except Exception as e:
-                    log.exception("service_step_failed", stage=stage, service=state["service"].key)
+                    if isinstance(e, LeadRadarAIError):  # expected domain error: one line, no traceback
+                        log.warning(
+                            "service_step_failed",
+                            stage=stage,
+                            service=state["service"].key,
+                            error=f"{type(e).__name__}: {e}",
+                        )
+                    else:
+                        log.exception("service_step_failed", stage=stage, service=state["service"].key)
                     await self.emit(state, "failed", "failed", f"{stage}: {e}", step=stage)
                     service_id = state["service"].service_id
                     return {
