@@ -46,6 +46,7 @@ class AISettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AI_", env_file=".env", extra="ignore")
 
     embed_model: str = "intfloat/multilingual-e5-small"
+    embed_cache_dir: str | None = None  # default is a temp dir that servers may wipe; set it in Docker
     topk_per_question: int = Field(default=5, gt=0)
     max_snippets_per_service: int = Field(default=40, gt=0)
     max_tokens_per_service: int = Field(default=25_000, gt=0)

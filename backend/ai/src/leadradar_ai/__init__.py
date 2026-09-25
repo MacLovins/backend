@@ -39,6 +39,7 @@ from leadradar_ai.errors import (
 )
 from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
 from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
+from leadradar_ai.retrieval import FastEmbedder
 from leadradar_ai.scoring import evaluate_rules, fit_score, lead_sort_key, score_company
 from leadradar_ai.settings import AISettings, LLMSettings
 
@@ -55,6 +56,7 @@ __all__ = [
     "Criterion",
     "Embedder",
     "ExtractionFailed",
+    "FastEmbedder",
     "FitResult",
     "GeminiClient",
     "ICPConfig",

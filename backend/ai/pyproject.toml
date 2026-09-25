@@ -4,11 +4,14 @@ version = "0.1.0"
 description = "LeadRadar AI engine: analysis graph, Gemini gateway, signal extraction, verification, scoring"
 requires-python = ">=3.12"
 dependencies = [
+    "fastembed>=0.8.1",
     "google-genai>=2.25.0",
+    "numpy>=2.5.3",
     "pydantic>=2.9",
     "pydantic-settings>=2.15.0",
     "structlog>=26.1.0",
     "tzdata>=2026.4",
+    "unidecode>=1.4.0",
 ]
 
 [dependency-groups]
@@ -25,3 +28,4 @@ packages = ["src/leadradar_ai"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["live: needs network or model downloads; run with --live"]
