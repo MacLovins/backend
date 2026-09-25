@@ -29,11 +29,21 @@ from leadradar_ai.contracts import (
     StoredSignal,
     VerifiedSignal,
 )
-from leadradar_ai.errors import ExtractionFailed, LeadRadarAIError, QuotaExhausted
+from leadradar_ai.errors import (
+    ExtractionFailed,
+    LeadRadarAIError,
+    LLMBadRequest,
+    LLMInputTooLarge,
+    LLMUnavailable,
+    QuotaExhausted,
+)
+from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
 from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
 from leadradar_ai.scoring import evaluate_rules, fit_score, lead_sort_key, score_company
+from leadradar_ai.settings import AISettings, LLMSettings
 
 __all__ = [
+    "AISettings",
     "AnalysisDocument",
     "AnalysisInput",
     "AnalysisStore",
@@ -46,9 +56,17 @@ __all__ = [
     "Embedder",
     "ExtractionFailed",
     "FitResult",
+    "GeminiClient",
     "ICPConfig",
+    "LLMBadRequest",
     "LLMCache",
     "LLMCallRecord",
+    "LLMClient",
+    "LLMInputTooLarge",
+    "LLMRequest",
+    "LLMResult",
+    "LLMSettings",
+    "LLMUnavailable",
     "LeadRadarAIError",
     "LeadScore",
     "ProgressEvent",

@@ -94,7 +94,10 @@ class UsageSink(Protocol):
     async def record(self, call: LLMCallRecord) -> None: ...
 
     async def used_today(self, model: str) -> int:
-        """Calls to `model` today; the day is in Pacific time, like Gemini quotas."""
+        """Calls to `model` today that consume quota (status not cache_hit / rate_limited).
+
+        The day is in Pacific time, like Gemini quotas.
+        """
         ...
 
 

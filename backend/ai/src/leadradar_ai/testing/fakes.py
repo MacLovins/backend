@@ -1,14 +1,16 @@
-"""In-memory implementations of the ports for tests and the offline CLI.
-
-FakeLLM arrives together with the LLMClient interface (AI-02).
-"""
+"""In-memory implementations of the ports and of the LLM for tests and the offline CLI."""
 
 import hashlib
 import math
 import re
 from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
+
+from pydantic import BaseModel
 
 from leadradar_ai.contracts import (
     AnalysisDocument,
@@ -25,6 +27,7 @@ from leadradar_ai.contracts import (
     StoredSignal,
     VerifiedSignal,
 )
+from leadradar_ai.llm.types import LLMRequest, LLMResult, Thinking, TransportError, TransportResponse
 
 
 def _document_date(doc: AnalysisDocument) -> datetime:
@@ -177,7 +180,7 @@ class InMemoryLLMCache:
 
 
 class InMemoryUsageSink:
-    """Counts real calls (cache hits excluded); `preset` simulates calls made earlier today."""
+    """Counts calls that consume quota (not cache hits, not 429s); `preset` = calls made earlier today."""
 
     def __init__(self, preset: dict[str, int] | None = None) -> None:
         self.calls: list[LLMCallRecord] = []
@@ -187,7 +190,9 @@ class InMemoryUsageSink:
         self.calls.append(call)
 
     async def used_today(self, model: str) -> int:
-        made = sum(1 for c in self.calls if c.model == model and not c.cache_hit)
+        made = sum(
+            1 for c in self.calls if c.model == model and c.status not in ("cache_hit", "rate_limited")
+        )
         return self.preset.get(model, 0) + made
 
 
@@ -215,3 +220,78 @@ class FakeEmbedder:
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed(text)
+
+
+# --- LLM ----------------------------------------------------------------------------------------
+
+BLOCKED = object()  # FakeLLM response: finish_reason SAFETY → LLMResult(output=None, blocked=True)
+
+FakeResponse = BaseModel | dict | Exception | object
+FakeHandler = Callable[[LLMRequest], FakeResponse]
+
+
+class FakeLLM:
+    """LLMClient for tests: answers from a handler or a queue; counts calls by purpose.
+
+    A response may be a model or dict (validated into request.output_model), an exception to raise,
+    or BLOCKED.
+    """
+
+    def __init__(
+        self, responses: FakeHandler | list[FakeResponse] | None = None, model: str = "fake-model"
+    ) -> None:
+        self._handler = responses if callable(responses) else None
+        self._queue = list(responses) if isinstance(responses, list) else []
+        self.model = model
+        self.calls: list[LLMRequest] = []
+
+    def calls_for(self, purpose: str) -> list[LLMRequest]:
+        return [c for c in self.calls if c.purpose == purpose]
+
+    async def generate[T: BaseModel](self, request: LLMRequest[T]) -> LLMResult[T]:
+        self.calls.append(request)
+        if self._handler is not None:
+            response = self._handler(request)
+        elif self._queue:
+            response = self._queue.pop(0)
+        else:
+            raise AssertionError(f"FakeLLM: no response queued for {request.purpose}")
+        if isinstance(response, Exception):
+            raise response
+        if response is BLOCKED:
+            return LLMResult(output=None, model=self.model, blocked=True)
+        data = response.model_dump() if isinstance(response, BaseModel) else response
+        return LLMResult(output=request.output_model.model_validate(data), model=self.model)
+
+
+@dataclass
+class TransportCall:
+    model: str
+    system: str
+    contents: str
+    thinking: Thinking
+
+
+class FakeTransport:
+    """Transport for GeminiClient tests: scripted per model; a str is the response text (finish STOP)."""
+
+    def __init__(self, script: dict[str, list[str | TransportResponse | TransportError]]) -> None:
+        self.script = {model: list(items) for model, items in script.items()}
+        self.calls: list[TransportCall] = []
+
+    async def generate(
+        self, *, model: str, system: str, contents: str, output_model: type[BaseModel], thinking: Thinking
+    ) -> TransportResponse:
+        self.calls.append(TransportCall(model, system, contents, thinking))
+        queue = self.script.get(model)
+        if not queue:
+            raise AssertionError(f"FakeTransport: unexpected call to {model}")
+        item: Any = queue.pop(0)
+        if isinstance(item, TransportError):
+            raise item
+        if isinstance(item, str):
+            return TransportResponse(text=item, finish_reason="STOP", input_tokens=100, output_tokens=20)
+        return item
+
+    def models_called(self) -> list[str]:
+        return [c.model for c in self.calls]

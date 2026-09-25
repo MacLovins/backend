@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "LeadRadar AI engine: analysis graph, Gemini gateway, signal extraction, verification, scoring"
 requires-python = ">=3.12"
 dependencies = [
+    "google-genai>=2.25.0",
     "pydantic>=2.9",
+    "pydantic-settings>=2.15.0",
+    "structlog>=26.1.0",
+    "tzdata>=2026.4",
 ]
 
 [dependency-groups]

@@ -15,3 +15,15 @@ class QuotaExhausted(LeadRadarAIError):
 
 class ExtractionFailed(LeadRadarAIError):
     """The LLM output could not be obtained or validated even after the repair attempt."""
+
+
+class LLMUnavailable(LeadRadarAIError):
+    """Every model of the pool failed with server or network errors after retries."""
+
+
+class LLMBadRequest(LeadRadarAIError):
+    """The API rejected the request itself (4xx other than 429): retrying will not help."""
+
+
+class LLMInputTooLarge(LeadRadarAIError):
+    """The prompt exceeds LLM_MAX_INPUT_TOKENS; the caller must split it (prefilter makes two calls)."""
