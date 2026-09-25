@@ -17,12 +17,11 @@ icp:
   countries: [AT, BE, BG, HR, CY, CZ, DK, EE, FI, FR, DE, GR, HU, IE, IT, LV, LT, LU, MT, NL, PL, PT, RO, SK, SI, ES, SE, GB, CH, "NO"]  # quoted: YAML 1.1 reads NO as false
   employees_min: 250
   nice_to_have:
-    - kind: industry_in  # NIS2 Annex I and II sectors
-      values: [energy_utilities, oil_gas, airlines, rail, logistics, postal_courier, banking, financial_markets, healthcare, pharma, medical_devices, water, digital_infrastructure, public_sector, chemicals, food_beverage, manufacturing, automotive, telecom]
+    # one criterion for regulated sectors: NIS2 Annex I/II + DORA (insurance). Separate criteria would make every
+    # company that is not in both lists lose Fit.
+    - kind: industry_in
+      values: [energy_utilities, oil_gas, airlines, rail, logistics, postal_courier, banking, financial_markets, insurance, healthcare, pharma, medical_devices, water, digital_infrastructure, public_sector, chemicals, food_beverage, manufacturing, automotive, telecom]
       weight: 2
-    - kind: industry_in  # DORA
-      values: [banking, insurance, financial_markets]
-      weight: 1
 
 rules:
   - name: Too small

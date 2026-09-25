@@ -149,6 +149,13 @@ def test_ia_rules_on_typical_companies():
     assert us.fit == 0.0 and us.priority == 0.0
 
 
+def test_cyber_fit_does_not_penalise_non_financial_regulated_sectors():
+    bundle = load_preset("cybersecurity").to_bundle()
+    assert score_company(make_company(), bundle, [], NOW).fit == 100.0  # logistics
+    assert score_company(make_company(industry_ids=["insurance"]), bundle, [], NOW).fit == 100.0
+    assert score_company(make_company(industry_ids=["retail"]), bundle, [], NOW).fit == 0.0
+
+
 def test_cyber_vendor_is_excluded():
     bundle = load_preset("cybersecurity").to_bundle()
     vendor = score_company(make_company(tags=["cybersecurity_vendor"]), bundle, [], NOW)
