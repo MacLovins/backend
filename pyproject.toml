@@ -1,0 +1,63 @@
+[tool.uv.workspace]
+members = ["parser", "backend/ai", "backend/auth", "backend/backend"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.9.0",
+    "import-linter>=2.1",
+    "httpx>=0.28.0",
+    "respx>=0.22.0",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "backend/backend/migrations",
+    "*.md",
+    "**/*.md",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["backend/backend/tests", "backend/auth/tests", "backend/ai/tests", "parser/tests"]
+markers = [
+    "live: network tests (disabled in normal test runs)",
+]
+
+[tool.importlinter]
+root_packages = ["leadradar_parser", "leadradar_ai", "leadradar_auth", "leadradar_core"]
+
+[[tool.importlinter.contracts]]
+name = "Libraries never import the app"
+type = "forbidden"
+source_modules = ["leadradar_parser", "leadradar_ai", "leadradar_auth"]
+forbidden_modules = ["leadradar_core"]
+
+[[tool.importlinter.contracts]]
+name = "Libraries are independent of each other"
+type = "independence"
+modules = ["leadradar_parser", "leadradar_ai", "leadradar_auth"]
+
+[[tool.importlinter.contracts]]
+name = "Core uses only public APIs of libraries"
+type = "forbidden"
+source_modules = ["leadradar_core"]
+forbidden_modules = [
+    "leadradar_ai.pipeline",
+    "leadradar_ai.llm",
+    "leadradar_ai.retrieval",
+    "leadradar_parser.adapters",
+    "leadradar_parser.http",
+    "leadradar_auth.security",
+]
+allow_indirect_imports = true
