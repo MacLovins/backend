@@ -261,6 +261,7 @@ class Nodes:
         return {
             "signals_verified": len(result.signals),
             "evidence_rejected": len(result.rejected),
+            "final_answers": dict(result.final_answers),
             "_message": f"{len(result.signals)} verified signals, {len(result.rejected)} rejected",
         }
 
@@ -281,6 +282,8 @@ class Nodes:
             llm_cache_hits=extraction.cache_hits if extraction else 0,
             signals_verified=state.get("signals_verified", 0),
             evidence_rejected=state.get("evidence_rejected", 0),
+            final_answers=state.get("final_answers", {}),
+            auto_no=extraction.auto_no if extraction else [],
         )
         return {
             "outcomes": [outcome],

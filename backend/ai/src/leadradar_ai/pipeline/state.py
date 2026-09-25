@@ -30,6 +30,10 @@ class ServiceOutcome(BaseModel):
     llm_cache_hits: int = 0
     signals_verified: int = 0
     evidence_rejected: int = 0
+    auto_no: list[str] = []  # str(question.id) answered "no" without the LLM (no candidate snippets)
+    final_answers: dict[
+        str, str
+    ] = {}  # str(question.id) → yes|no|unclear after verification (empty if skipped)
 
 
 def add_durations(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
@@ -72,6 +76,7 @@ class ServiceState(TypedDict, total=False):
     extraction: ServiceExtraction
     signals_verified: int
     evidence_rejected: int
+    final_answers: dict[str, str]
     failed: bool
     outcomes: Outcomes
     errors: Errors

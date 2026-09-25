@@ -3,6 +3,7 @@
     lr-ai presets [intelligent_automation]
     lr-ai analyze --fixture tests/fixtures/dhl.jsonl --domain dhl.com --name "DHL Group" --live
     lr-ai expand --preset intelligent_automation --question ia_hiring --live
+    lr-ai eval --fixtures-dir tests/fixtures            # cache-only: offline, for CI
 
 Without --live nothing goes to the network: answers come from the local LLM cache (.cache/lr-ai/llm),
 and an uncached prompt fails that service with a hint. A repeated --live run costs 0 LLM calls.
@@ -21,6 +22,7 @@ import typer
 from leadradar_ai.config_assist import expand_question, languages_for_icp
 from leadradar_ai.contracts import AnalysisInput, CompanyProfile, LeadScore, ProgressEvent, ServiceBundle
 from leadradar_ai.errors import AnalysisPaused
+from leadradar_ai.evals import default_golden_dir, load_companies, load_labels, run_eval, write_report
 from leadradar_ai.llm.gemini import GeminiClient
 from leadradar_ai.llm.types import LLMClient
 from leadradar_ai.local import CacheOnlyTransport, FileLLMCache, FileUsageSink, load_parser_jsonl
@@ -264,6 +266,60 @@ def expand(
     languages = language or languages_for_icp(bundle.icp)
     result = asyncio.run(expand_question(llm, bundle, q, languages=languages))
     typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+# --- eval ---------------------------------------------------------------------------------------
+
+
+@app.command("eval")
+def eval_command(
+    golden: Annotated[
+        Path | None, typer.Option(help="Labels JSONL (default: the packaged mvp.jsonl)")
+    ] = None,
+    companies: Annotated[Path | None, typer.Option(help="Companies YAML (default: packaged)")] = None,
+    fixtures_dir: Annotated[Path, typer.Option(help="Directory with parser fixtures")] = Path(
+        "tests/fixtures"
+    ),
+    live: Annotated[
+        bool, typer.Option("--live/--cache-only", help="Call Gemini for uncached prompts")
+    ] = False,
+    now: Annotated[str | None, typer.Option(help="Reference date, ISO (default: today)")] = None,
+    fake_embeddings: Annotated[bool, typer.Option(help="Hash embeddings instead of e5")] = False,
+    out_dir: Annotated[Path, typer.Option(help="Where to write the report")] = Path("evals/reports"),
+    cache_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE,
+    fail_under: Annotated[float | None, typer.Option(help="Exit 1 if precision is below this")] = None,
+) -> None:
+    """Measure precision / recall on the golden set and write a Markdown + JSON report."""
+    golden_dir = default_golden_dir()
+    labels = load_labels(golden or golden_dir / "mvp.jsonl")
+    cases = load_companies(companies or golden_dir / "companies.yaml")
+    reference = datetime.fromisoformat(now).replace(tzinfo=UTC) if now else datetime.now(UTC)
+    llm, _ = make_llm(live, cache_dir)
+    result = asyncio.run(
+        run_eval(
+            labels,
+            cases,
+            fixtures_dir,
+            llm,
+            make_embedder(fake_embeddings),
+            reference,
+            mode="live" if live else "cache-only",
+            prefilter=PrefilterConfig.from_settings(AISettings()),
+            max_input_tokens=LLMSettings().max_input_tokens,
+        )
+    )
+    md, js = write_report(result, out_dir)
+    m = result.metrics
+    typer.echo(
+        f"precision {m.overall['precision']} · recall {m.overall['recall']} · evaluated {m.evaluated}/"
+        f"{len(result.decisions)} · hallucinated quotes {m.hallucination_rate} · LLM calls {m.llm_calls}"
+    )
+    for note in result.notes:
+        typer.echo(f"note: {note}")
+    typer.echo(f"report: {md}\n        {js}")
+    precision = m.overall["precision"]
+    if fail_under is not None and (precision is None or precision < fail_under):
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

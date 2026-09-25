@@ -1,6 +1,6 @@
 """Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
 
-suggest_questions, classify_industry and evals are added here as they are implemented.
+suggest_questions and classify_industry (P1) are added here as they are implemented.
 """
 
 from leadradar_ai.config_assist import QuestionExpansion, apply_expansion, expand_question, languages_for_icp
@@ -39,6 +39,7 @@ from leadradar_ai.errors import (
     LLMUnavailable,
     QuotaExhausted,
 )
+from leadradar_ai.evals import EvalResult, load_companies, load_labels, run_eval, write_report
 from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
 from leadradar_ai.pipeline import (
     AnalysisDeps,
@@ -69,6 +70,7 @@ __all__ = [
     "Contribution",
     "Criterion",
     "Embedder",
+    "EvalResult",
     "ExtractionFailed",
     "FastEmbedder",
     "FitResult",
@@ -111,8 +113,12 @@ __all__ = [
     "languages_for_icp",
     "lead_sort_key",
     "list_presets",
+    "load_companies",
+    "load_labels",
     "load_preset",
     "run_analysis",
+    "run_eval",
     "score_company",
     "thread_config",
+    "write_report",
 ]
