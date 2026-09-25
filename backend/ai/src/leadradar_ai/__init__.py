@@ -1,6 +1,6 @@
 """Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
 
-Graph, scoring, LLM helpers, presets and evals are added here as they are implemented.
+Graph, LLM helpers, presets and evals are added here as they are implemented.
 """
 
 from leadradar_ai.contracts import (
@@ -11,6 +11,7 @@ from leadradar_ai.contracts import (
     CompanyProfile,
     Contribution,
     Criterion,
+    FitResult,
     ICPConfig,
     LeadScore,
     LLMCallRecord,
@@ -30,6 +31,7 @@ from leadradar_ai.contracts import (
 )
 from leadradar_ai.errors import ExtractionFailed, LeadRadarAIError, QuotaExhausted
 from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
+from leadradar_ai.scoring import evaluate_rules, fit_score, lead_sort_key, score_company
 
 __all__ = [
     "AnalysisDocument",
@@ -43,6 +45,7 @@ __all__ = [
     "Criterion",
     "Embedder",
     "ExtractionFailed",
+    "FitResult",
     "ICPConfig",
     "LLMCache",
     "LLMCallRecord",
@@ -64,4 +67,8 @@ __all__ = [
     "StoredSignal",
     "UsageSink",
     "VerifiedSignal",
+    "evaluate_rules",
+    "fit_score",
+    "lead_sort_key",
+    "score_company",
 ]

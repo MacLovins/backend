@@ -102,19 +102,54 @@ class ICPConfig(Contract):
         return self
 
 
+class FirmographicCondition(Contract):
+    field: Literal["employees", "revenue_eur", "country_code", "industry_ids", "domain", "tags"]
+    op: Literal["lt", "gt", "eq", "in", "not_in", "intersects"]
+    value: int | float | str | list[str | int]
+
+    @model_validator(mode="after")
+    def _op_matches_value(self) -> Self:
+        numeric = self.field in ("employees", "revenue_eur") and isinstance(self.value, int | float)
+        if self.op in ("lt", "gt") and not numeric:
+            raise ValueError("lt/gt need a numeric field (employees, revenue_eur) and a number")
+        if self.op in ("in", "not_in", "intersects") and not isinstance(self.value, list):
+            raise ValueError(f"op '{self.op}' needs a list value")
+        return self
+
+
+class SignalCondition(Contract):
+    question_key: str = Field(min_length=1)
+    min_strength: float = Field(ge=0, le=1)  # compared with s_q of the question
+
+
+class ListCondition(Contract):
+    domains: list[str] = Field(min_length=1)  # existing clients, competitors
+
+
+_CONDITIONS: dict[str, type[Contract]] = {
+    "firmographic": FirmographicCondition,
+    "signal": SignalCondition,
+    "list": ListCondition,
+}
+
+
 class RuleConfig(Contract):
     id: UUID
     name: str
     kind: Literal["firmographic", "signal", "list"]
-    condition: dict  # shape per kind — SPEC §1.7.5 "Правила"
+    condition: dict  # shape per kind (SPEC §1.7.5) — validated by the *Condition models above
     action: Literal["exclude", "cap", "flag"]
     cap_value: float | None = Field(default=None, ge=0, le=100)
 
     @model_validator(mode="after")
-    def _cap_needs_value(self) -> Self:
+    def _valid(self) -> Self:
         if self.action == "cap" and self.cap_value is None:
             raise ValueError("action 'cap' requires cap_value")
+        _CONDITIONS[self.kind].model_validate(self.condition)
         return self
+
+    def parsed_condition(self) -> "FirmographicCondition | SignalCondition | ListCondition":
+        return _CONDITIONS[self.kind].model_validate(self.condition)  # type: ignore[return-value]
 
 
 class ScoringProfile(Contract):
@@ -311,6 +346,15 @@ class LeadScore(Contract):
     why_now: list[Reason]
     data_gaps: list[str]
     computed_at: AwareDatetime
+
+
+class FitResult(Contract):
+    """Result of fit_score: used by score_company and by discovery (ranking candidates)."""
+
+    fit: float = Field(ge=0, le=100)
+    must_have_passed: bool
+    details: list[dict]  # {"criterion", "required", "status": pass|fail|unknown|match|no_match, "label"}
+    data_gaps: list[str]  # company fields that are unknown: "employees", "industry_ids", …
 
 
 class ScoreChange(Contract):

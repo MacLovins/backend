@@ -136,9 +136,43 @@ def test_question_validation():
 def test_icp_and_rule_validation():
     with pytest.raises(ValidationError):
         ICPConfig(employees_min=5000, employees_max=1000)
+    distress = {"question_key": "ia_distress", "min_strength": 0.5}
     with pytest.raises(ValidationError):
-        RuleConfig(id=uuid4(), name="cap", kind="signal", condition={}, action="cap")
-    RuleConfig(id=uuid4(), name="cap", kind="signal", condition={}, action="cap", cap_value=30)
+        RuleConfig(id=uuid4(), name="cap", kind="signal", condition=distress, action="cap")
+    RuleConfig(id=uuid4(), name="cap", kind="signal", condition=distress, action="cap", cap_value=30)
+
+
+@pytest.mark.parametrize(
+    ("kind", "condition"),
+    [
+        ("signal", {}),
+        ("signal", {"question_key": "ia_distress", "min_strength": 2}),
+        ("firmographic", {"field": "employees", "op": "lt"}),
+        ("firmographic", {"field": "country_code", "op": "lt", "value": 5}),
+        ("firmographic", {"field": "employees", "op": "lt", "value": "500"}),
+        ("firmographic", {"field": "industry_ids", "op": "intersects", "value": "software"}),
+        ("firmographic", {"field": "ceo", "op": "eq", "value": "x"}),
+        ("list", {"domains": []}),
+        ("list", {"domains": ["a.com"], "extra": 1}),
+    ],
+)
+def test_rule_condition_shape_is_validated(kind, condition):
+    with pytest.raises(ValidationError):
+        RuleConfig(id=uuid4(), name="r", kind=kind, condition=condition, action="flag")
+
+
+@pytest.mark.parametrize(
+    ("kind", "condition"),
+    [
+        ("firmographic", {"field": "employees", "op": "lt", "value": 500}),
+        ("firmographic", {"field": "industry_ids", "op": "intersects", "value": ["it_services", "software"]}),
+        ("signal", {"question_key": "ia_distress", "min_strength": 0.5}),
+        ("list", {"domains": ["client1.com"]}),
+    ],
+)
+def test_valid_rule_conditions(kind, condition):
+    rule = RuleConfig(id=uuid4(), name="r", kind=kind, condition=condition, action="exclude")
+    assert rule.parsed_condition().model_dump(exclude_unset=True) == condition
 
 
 def test_extra_fields_are_forbidden():
