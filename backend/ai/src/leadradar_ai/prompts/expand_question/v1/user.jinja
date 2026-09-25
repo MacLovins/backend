@@ -1,0 +1,9 @@
+<service>{{ service.name }}: {{ service.description }}</service>
+<question category="{{ question.category }}" polarity="{{ question.polarity }}" source_types="{{ question.source_types | join(', ') }}">{{ question.text }}</question>
+<languages>{{ languages | join(', ') }}</languages>
+<seed>
+{% for lang, terms in seed.items() %}
+{{ lang }}: {{ terms | join('; ') }}
+{% endfor %}
+</seed>
+Generate search terms for this question following the rules. Return JSON only.

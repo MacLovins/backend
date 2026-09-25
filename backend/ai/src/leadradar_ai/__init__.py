@@ -1,8 +1,9 @@
 """Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
 
-Config helpers (expand_question, …) and evals are added here as they are implemented.
+suggest_questions, classify_industry and evals are added here as they are implemented.
 """
 
+from leadradar_ai.config_assist import QuestionExpansion, apply_expansion, expand_question, languages_for_icp
 from leadradar_ai.contracts import (
     AnalysisDocument,
     AnalysisInput,
@@ -88,6 +89,7 @@ __all__ = [
     "ProgressEvent",
     "ProgressSink",
     "QuestionConfig",
+    "QuestionExpansion",
     "QuotaExhausted",
     "Reason",
     "RejectedEvidence",
@@ -101,9 +103,12 @@ __all__ = [
     "StoredSignal",
     "UsageSink",
     "VerifiedSignal",
+    "apply_expansion",
     "build_analysis_graph",
     "evaluate_rules",
+    "expand_question",
     "fit_score",
+    "languages_for_icp",
     "lead_sort_key",
     "list_presets",
     "load_preset",
