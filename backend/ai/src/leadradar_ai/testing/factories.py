@@ -11,6 +11,7 @@ from leadradar_ai.contracts import (
     RuleConfig,
     ScoringProfile,
     ServiceBundle,
+    Snippet,
     StoredSignal,
 )
 
@@ -115,3 +116,25 @@ def make_document(
         "language": "en",
     }
     return AnalysisDocument(**(data | overrides))
+
+
+def make_snippet(**overrides) -> Snippet:
+    text = overrides.pop(
+        "text", "Since March 2026 agentic AI processes incoming customer RFQs in freight forwarding."
+    )
+    data = {
+        "id": "S1",
+        "chunk_id": uuid4(),
+        "document_id": uuid4(),
+        "text": text,
+        "char_start": 1000,
+        "char_end": 1000 + len(text),
+        "source_type": "website",
+        "source_name": "website",
+        "url": "https://www.dhl.com/strategy-2030",
+        "title": "Strategy 2030",
+        "published_at": NOW,
+        "fetched_at": NOW,
+        "language": "en",
+    }
+    return Snippet(**(data | overrides))
