@@ -6,9 +6,10 @@ batches (each with only its own candidates). A blocked call (SAFETY / RECITATION
 """
 
 import json
-from dataclasses import dataclass, field
 from functools import cache
 from uuid import UUID
+
+from pydantic import BaseModel
 
 from leadradar_ai.contracts import CompanyProfile, QuestionConfig, ServiceBundle, Snippet
 from leadradar_ai.extraction.schema import Answer, ExtractionOutput
@@ -87,12 +88,9 @@ def render_user(
 # --- extraction ---------------------------------------------------------------------------------
 
 
-@dataclass
-class ServiceExtraction:
-    answers: dict[str, Answer] = field(
-        default_factory=dict
-    )  # str(question.id) → answer, question_id = UUID str
-    auto_no: list[str] = field(default_factory=list)  # answered "no" without the LLM
+class ServiceExtraction(BaseModel):
+    answers: dict[str, Answer] = {}  # str(question.id) → answer, question_id = UUID str
+    auto_no: list[str] = []  # answered "no" without the LLM
     llm_calls: int = 0
     cache_hits: int = 0
     model: str | None = None

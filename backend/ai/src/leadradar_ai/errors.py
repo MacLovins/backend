@@ -13,6 +13,19 @@ class QuotaExhausted(LeadRadarAIError):
         super().__init__(message or f"LLM quota exhausted for pool '{pool}'")
 
 
+class AnalysisPaused(QuotaExhausted):
+    """Raised by run_analysis when some services hit the quota; the others are finished and saved.
+
+    `output` holds the partial result. Running the same input again later continues incrementally:
+    finished services skip the LLM (fingerprint), paused ones are extracted.
+    """
+
+    def __init__(self, pool: str, paused_service_ids: list[str], output: dict) -> None:
+        self.paused_service_ids = paused_service_ids
+        self.output = output
+        super().__init__(pool, f"LLM quota exhausted; paused services: {', '.join(paused_service_ids)}")
+
+
 class ExtractionFailed(LeadRadarAIError):
     """The LLM output could not be obtained or validated even after the repair attempt."""
 

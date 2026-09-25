@@ -1,6 +1,6 @@
 """Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
 
-Graph, LLM helpers, presets and evals are added here as they are implemented.
+Config helpers (expand_question, …), presets and evals are added here as they are implemented.
 """
 
 from leadradar_ai.contracts import (
@@ -30,6 +30,7 @@ from leadradar_ai.contracts import (
     VerifiedSignal,
 )
 from leadradar_ai.errors import (
+    AnalysisPaused,
     ExtractionFailed,
     LeadRadarAIError,
     LLMBadRequest,
@@ -38,6 +39,13 @@ from leadradar_ai.errors import (
     QuotaExhausted,
 )
 from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
+from leadradar_ai.pipeline import (
+    AnalysisDeps,
+    AnalysisOutput,
+    build_analysis_graph,
+    run_analysis,
+    thread_config,
+)
 from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
 from leadradar_ai.retrieval import FastEmbedder
 from leadradar_ai.scoring import evaluate_rules, fit_score, lead_sort_key, score_company
@@ -45,8 +53,11 @@ from leadradar_ai.settings import AISettings, LLMSettings
 
 __all__ = [
     "AISettings",
+    "AnalysisDeps",
     "AnalysisDocument",
     "AnalysisInput",
+    "AnalysisOutput",
+    "AnalysisPaused",
     "AnalysisStore",
     "ChunkIn",
     "CollectRequest",
@@ -87,8 +98,11 @@ __all__ = [
     "StoredSignal",
     "UsageSink",
     "VerifiedSignal",
+    "build_analysis_graph",
     "evaluate_rules",
     "fit_score",
     "lead_sort_key",
+    "run_analysis",
     "score_company",
+    "thread_config",
 ]

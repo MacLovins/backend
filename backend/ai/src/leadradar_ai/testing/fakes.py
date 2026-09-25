@@ -35,25 +35,47 @@ def _document_date(doc: AnalysisDocument) -> datetime:
 
 
 class FakeCollector:
-    """Returns the given documents that fit the request; records every call."""
+    """Returns the given documents that fit the request; records every call.
 
-    def __init__(self, documents: list[AnalysisDocument], resolved: CompanyProfile | None = None) -> None:
+    With `store`, collected documents are also saved there (dedup by id), like core's ParserCollector.
+    `fail_resolve` / `fail_collect` raise on every call.
+    """
+
+    def __init__(
+        self,
+        documents: list[AnalysisDocument],
+        resolved: CompanyProfile | None = None,
+        store: "InMemoryStore | None" = None,
+        fail_resolve: Exception | None = None,
+        fail_collect: Exception | None = None,
+    ) -> None:
         self.documents = documents
         self.resolved = resolved
+        self.store = store
+        self.fail_resolve = fail_resolve
+        self.fail_collect = fail_collect
         self.resolve_calls: list[CompanyProfile] = []
         self.collect_calls: list[CollectRequest] = []
 
     async def resolve(self, company: CompanyProfile) -> CompanyProfile:
         self.resolve_calls.append(company)
+        if self.fail_resolve:
+            raise self.fail_resolve
         return self.resolved or company
 
     async def collect(self, company: CompanyProfile, request: CollectRequest) -> list[AnalysisDocument]:
         self.collect_calls.append(request)
-        return [
+        if self.fail_collect:
+            raise self.fail_collect
+        docs = [
             d
             for d in self.documents
             if d.source_type in request.source_types and _document_date(d) >= request.since
         ]
+        if self.store is not None:
+            known = {d.id for d in self.store.documents[company.id]}
+            self.store.add_documents(company.id, [d for d in docs if d.id not in known])
+        return docs
 
 
 class InMemoryStore:
