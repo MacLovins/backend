@@ -22,6 +22,7 @@ from leadradar_ai.contracts import (
     Tier,
 )
 from leadradar_ai.scoring.decay import evidence_value
+from leadradar_ai.scoring.derived import derived_signals
 from leadradar_ai.scoring.explain import build_why_now
 from leadradar_ai.scoring.fit import fit_score
 from leadradar_ai.scoring.rules import evaluate_rules
@@ -72,8 +73,13 @@ def score_company(
     bundle: ServiceBundle,
     signals: list[StoredSignal],
     now: datetime,
+    *,
+    include_derived: bool = True,
 ) -> LeadScore:
+    """`signals` are the stored active signals; derived NIS2/DORA signals are added from firmographics."""
     profile = bundle.scoring
+    if include_derived:
+        signals = [*signals, *derived_signals(company, bundle, now)]
     by_question: dict = defaultdict(list)
     for s in signals:
         if s.status == "active" and s.confidence >= profile.min_confidence:

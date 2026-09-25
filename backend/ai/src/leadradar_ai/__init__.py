@@ -51,7 +51,7 @@ from leadradar_ai.pipeline import (
 from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
 from leadradar_ai.presets import SIGNAL_CATEGORIES, Preset, list_presets, load_preset
 from leadradar_ai.retrieval import FastEmbedder
-from leadradar_ai.scoring import evaluate_rules, fit_score, lead_sort_key, score_company
+from leadradar_ai.scoring import derived_signals, evaluate_rules, fit_score, lead_sort_key, score_company
 from leadradar_ai.settings import AISettings, LLMSettings
 
 __all__ = [
@@ -107,6 +107,7 @@ __all__ = [
     "VerifiedSignal",
     "apply_expansion",
     "build_analysis_graph",
+    "derived_signals",
     "evaluate_rules",
     "expand_question",
     "fit_score",

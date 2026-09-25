@@ -1,3 +1,4 @@
+from leadradar_ai.scoring.derived import derived_signals
 from leadradar_ai.scoring.engine import (
     assign_tier,
     combine_priority,
@@ -12,6 +13,7 @@ from leadradar_ai.scoring.rules import evaluate_rules
 __all__ = [
     "assign_tier",
     "combine_priority",
+    "derived_signals",
     "evaluate_rules",
     "fit_score",
     "lead_sort_key",
