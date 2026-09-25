@@ -1,3 +1,125 @@
-"""LeadRadar AI engine - public API."""
+"""Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
 
-__version__ = "0.1.0"
+suggest_questions and classify_industry (P1) are added here as they are implemented.
+"""
+
+from leadradar_ai.config_assist import QuestionExpansion, apply_expansion, expand_question, languages_for_icp
+from leadradar_ai.contracts import (
+    AnalysisDocument,
+    AnalysisInput,
+    ChunkIn,
+    CollectRequest,
+    CompanyProfile,
+    Contribution,
+    Criterion,
+    FitResult,
+    ICPConfig,
+    LeadScore,
+    LLMCallRecord,
+    ProgressEvent,
+    QuestionConfig,
+    Reason,
+    RejectedEvidence,
+    RuleConfig,
+    RunStats,
+    ScoreChange,
+    ScoringProfile,
+    ServiceBundle,
+    Snippet,
+    StepError,
+    StoredSignal,
+    VerifiedSignal,
+)
+from leadradar_ai.errors import (
+    AnalysisPaused,
+    ExtractionFailed,
+    LeadRadarAIError,
+    LLMBadRequest,
+    LLMInputTooLarge,
+    LLMUnavailable,
+    QuotaExhausted,
+)
+from leadradar_ai.evals import EvalResult, load_companies, load_labels, run_eval, write_report
+from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
+from leadradar_ai.pipeline import (
+    AnalysisDeps,
+    AnalysisOutput,
+    build_analysis_graph,
+    run_analysis,
+    thread_config,
+)
+from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
+from leadradar_ai.presets import SIGNAL_CATEGORIES, Preset, list_presets, load_preset
+from leadradar_ai.retrieval import FastEmbedder
+from leadradar_ai.scoring import derived_signals, evaluate_rules, fit_score, lead_sort_key, score_company
+from leadradar_ai.settings import AISettings, LLMSettings
+
+__all__ = [
+    "SIGNAL_CATEGORIES",
+    "AISettings",
+    "AnalysisDeps",
+    "AnalysisDocument",
+    "AnalysisInput",
+    "AnalysisOutput",
+    "AnalysisPaused",
+    "AnalysisStore",
+    "ChunkIn",
+    "CollectRequest",
+    "Collector",
+    "CompanyProfile",
+    "Contribution",
+    "Criterion",
+    "Embedder",
+    "EvalResult",
+    "ExtractionFailed",
+    "FastEmbedder",
+    "FitResult",
+    "GeminiClient",
+    "ICPConfig",
+    "LLMBadRequest",
+    "LLMCache",
+    "LLMCallRecord",
+    "LLMClient",
+    "LLMInputTooLarge",
+    "LLMRequest",
+    "LLMResult",
+    "LLMSettings",
+    "LLMUnavailable",
+    "LeadRadarAIError",
+    "LeadScore",
+    "Preset",
+    "ProgressEvent",
+    "ProgressSink",
+    "QuestionConfig",
+    "QuestionExpansion",
+    "QuotaExhausted",
+    "Reason",
+    "RejectedEvidence",
+    "RuleConfig",
+    "RunStats",
+    "ScoreChange",
+    "ScoringProfile",
+    "ServiceBundle",
+    "Snippet",
+    "StepError",
+    "StoredSignal",
+    "UsageSink",
+    "VerifiedSignal",
+    "apply_expansion",
+    "build_analysis_graph",
+    "derived_signals",
+    "evaluate_rules",
+    "expand_question",
+    "fit_score",
+    "languages_for_icp",
+    "lead_sort_key",
+    "list_presets",
+    "load_companies",
+    "load_labels",
+    "load_preset",
+    "run_analysis",
+    "run_eval",
+    "score_company",
+    "thread_config",
+    "write_report",
+]

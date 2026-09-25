@@ -1,36 +1,52 @@
+name: leadradar-backend
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: leadradar-postgres
     restart: unless-stopped
     environment:
+      POSTGRES_DB: ${POSTGRES_DB:-leadradar}
       POSTGRES_USER: ${POSTGRES_USER:-leadradar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadradar}
-      POSTGRES_DB: ${POSTGRES_DB:-leadradar}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leadradar} -d ${POSTGRES_DB:-leadradar}"]
       interval: 5s
-      timeout: 5s
-      retries: 5
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     container_name: leadradar-redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
-      retries: 5
+      timeout: 3s
+      retries: 10
+
+  parser:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      PARSER_USER_AGENT: ${PARSER_USER_AGENT:-LeadRadarBot/0.1 (+https://example.invalid/bot; engineering@example.invalid)}
+      PARSER_ADAPTERS: ${PARSER_ADAPTERS:-gdelt,website,jobs_ats,careers_html,wikidata}
+      PARSER_CACHE_DIR: /var/cache/leadradar/parser
+    volumes:
+      - parser-cache:/var/cache/leadradar/parser
 
 volumes:
-  postgres_data:
-  redis_data:
+  postgres-data:
+  redis-data:
+  parser-cache:

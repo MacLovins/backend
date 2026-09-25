@@ -1,17 +1,31 @@
 [project]
 name = "leadradar-ai"
 version = "0.1.0"
-description = "LeadRadar AI and extraction engine"
+description = "LeadRadar AI engine: analysis graph, Gemini gateway, signal extraction, verification, scoring"
 requires-python = ">=3.12"
 dependencies = [
-    "pydantic>=2.7.0",
-    "pydantic-settings>=2.2.0",
-    "pyyaml>=6.0.1",
-    "typer>=0.12.0",
+    "fastembed>=0.8.1",
+    "google-genai>=2.25.0",
+    "jinja2>=3.1.6",
+    "langgraph>=1.0",
+    "numpy>=2.5.3",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+    "rapidfuzz>=3.14.6",
+    "structlog>=26.1.0",
+    "typer>=0.27.2",
+    "tzdata>=2026.4",
+    "unidecode>=1.4.0",
 ]
 
 [project.scripts]
 lr-ai = "leadradar_ai.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -19,3 +33,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/leadradar_ai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: needs network or model downloads; run with --live"]

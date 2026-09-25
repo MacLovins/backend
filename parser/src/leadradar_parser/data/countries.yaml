@@ -1,0 +1,20 @@
+- {code: DE, label: Germany, wikidata_qid: Q183, languages: [de, en], is_eu: true}
+- {code: AT, label: Austria, wikidata_qid: Q40, languages: [de, en], is_eu: true}
+- {code: CH, label: Switzerland, wikidata_qid: Q39, languages: [de, fr, it, en], is_eu: false}
+- {code: FR, label: France, wikidata_qid: Q142, languages: [fr, en], is_eu: true}
+- {code: IT, label: Italy, wikidata_qid: Q38, languages: [it, en], is_eu: true}
+- {code: ES, label: Spain, wikidata_qid: Q29, languages: [es, en], is_eu: true}
+- {code: NL, label: Netherlands, wikidata_qid: Q55, languages: [nl, en], is_eu: true}
+- {code: BE, label: Belgium, wikidata_qid: Q31, languages: [nl, fr, de, en], is_eu: true}
+- {code: PL, label: Poland, wikidata_qid: Q36, languages: [pl, en], is_eu: true}
+- {code: RO, label: Romania, wikidata_qid: Q218, languages: [ro, en], is_eu: true}
+- {code: MD, label: Moldova, wikidata_qid: Q217, languages: [ro, ru, en], is_eu: false}
+- {code: DK, label: Denmark, wikidata_qid: Q35, languages: [da, en], is_eu: true}
+- {code: SE, label: Sweden, wikidata_qid: Q34, languages: [sv, en], is_eu: true}
+- {code: "NO", label: Norway, wikidata_qid: Q20, languages: ["no", en], is_eu: false}
+- {code: FI, label: Finland, wikidata_qid: Q33, languages: [fi, sv, en], is_eu: true}
+- {code: IE, label: Ireland, wikidata_qid: Q27, languages: [en, ga], is_eu: true}
+- {code: PT, label: Portugal, wikidata_qid: Q45, languages: [pt, en], is_eu: true}
+- {code: CZ, label: Czechia, wikidata_qid: Q213, languages: [cs, en], is_eu: true}
+- {code: GB, label: United Kingdom, wikidata_qid: Q145, languages: [en], is_eu: false}
+- {code: US, label: United States, wikidata_qid: Q30, languages: [en], is_eu: false}

@@ -1,14 +1,32 @@
-[tool.uv.workspace]
-members = ["parser", "backend/ai", "backend/auth", "backend/backend"]
+[project]
+name = "leadradar-backend-workspace"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "ruff>=0.9.0",
     "import-linter>=2.1",
     "httpx>=0.28.0",
     "respx>=0.22.0",
+]
+
+[tool.uv.workspace]
+members = ["parser", "backend/ai", "backend/auth", "backend/backend"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = [
+    "live: network tests (disabled in normal test runs)",
+]
+testpaths = [
+    "backend/backend/tests",
+    "backend/auth/tests",
+    "backend/ai/tests",
+    "parser/tests",
 ]
 
 [tool.ruff]
@@ -23,16 +41,17 @@ exclude = [
     "**/*.md",
 ]
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "W", "UP"]
-ignore = ["E501"]
+[tool.ruff.format]
+exclude = ["*.md"]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["backend/backend/tests", "backend/auth/tests", "backend/ai/tests", "parser/tests"]
-markers = [
-    "live: network tests (disabled in normal test runs)",
-]
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = ["E501"]
+allowed-confusables = ["×", "−"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
+"backend/ai/tests/test_verification.py" = ["RUF001"]
 
 [tool.importlinter]
 root_packages = ["leadradar_parser", "leadradar_ai", "leadradar_auth", "leadradar_core"]

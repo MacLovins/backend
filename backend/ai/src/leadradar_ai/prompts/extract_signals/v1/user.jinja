@@ -1,0 +1,13 @@
+<company>{{ company.name }} · {{ company.domain }} · aliases: {{ company.aliases | join(", ") or "none" }} · country: {{ company.country or "unknown" }} · industries: {{ company.industries | join(", ") or "unknown" }} · employees: {{ company.employees or "unknown" }}</company>
+<service>{{ service.name }}: {{ service.description }}</service>
+<snippets>
+{% for s in snippets %}
+<snippet id="{{ s.id }}" source_type="{{ s.source_type }}" source="{{ s.source | attr }}" published="{{ s.published or 'unknown' }}" title="{{ s.title | attr }}">{{ s.text }}</snippet>
+{% endfor %}
+</snippets>
+<questions>
+{% for q in questions %}
+<question id="{{ q.id }}" polarity="{{ q.polarity }}" category="{{ q.category }}">{{ q.text }}</question>
+{% endfor %}
+</questions>
+Based on the snippets above, answer every question in <questions> following the rules. Return JSON only.
