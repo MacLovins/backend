@@ -1,0 +1,13 @@
+# ATS detection (SPEC §1.7.4). Named groups: token (required), host, site (Workday).
+# Checked in order against the careers/home page HTML, links and iframes.
+greenhouse_embed: {kind: greenhouse, pattern: 'boards\.greenhouse\.io/embed/job_board(?:/js)?\?for=(?P<token>[\w-]+)'}
+greenhouse: {kind: greenhouse, pattern: '(?:job-boards|boards)(?:\.eu)?\.greenhouse\.io/(?!embed\b)(?P<token>[\w-]+)'}
+lever: {kind: lever, pattern: '(?P<host>jobs\.(?:eu\.)?lever\.co)/(?P<token>[\w.-]+)'}
+workday_api: {kind: workday, pattern: '(?P<host>[\w-]+\.wd\d+\.myworkdayjobs\.com)/wday/cxs/(?P<token>[\w-]+)/(?P<site>[\w-]+)'}
+workday: {kind: workday, pattern: '(?P<host>(?P<token>[\w-]+)\.wd\d+\.myworkdayjobs\.com)/(?!wday/)(?:[a-z]{2}(?:-[a-z]{2})?/)?(?P<site>[\w-]+)'}
+workday_site: {kind: workday, pattern: '(?P<host>wd\d+\.myworkdaysite\.com)/(?:[a-z]{2}(?:-[a-z]{2})?/)?recruiting/(?P<token>[\w-]+)/(?P<site>[\w-]+)'}
+personio: {kind: personio, pattern: '(?P<host>(?P<token>[\w-]+)\.jobs\.personio\.(?:de|com))'}
+ashby: {kind: ashby, pattern: 'jobs\.ashbyhq\.com/(?P<token>[\w.-]+)'}
+smartrecruiters: {kind: smartrecruiters, pattern: '(?:jobs|careers)\.smartrecruiters\.com/(?P<token>[\w-]+)'}
+workable: {kind: workable, pattern: 'apply\.workable\.com/(?!api\b)(?P<token>[\w-]+)'}
+recruitee: {kind: recruitee, pattern: '(?P<host>(?P<token>[\w-]+)\.recruitee\.com)'}

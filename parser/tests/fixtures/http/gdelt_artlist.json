@@ -1,0 +1,6 @@
+{"articles": [
+  {"url": "https://news.example/dhl-automation?utm_source=gdelt", "title": "DHL Group expands warehouse automation", "seendate": "20260920T081500Z", "domain": "news.example", "language": "German", "sourcecountry": "Germany"},
+  {"url": "https://news.example/dhl-automation", "title": "Duplicate by canonical URL", "seendate": "20260920T081500Z", "domain": "news.example", "language": "German"},
+  {"url": "https://paywall.example/dhl-cfo", "title": "DHL Group names new CFO", "seendate": "20260918T120000Z", "domain": "paywall.example", "language": "English"},
+  {"url": "https://news.example/old", "title": "Too old for the plan window", "seendate": "20250101T000000Z", "domain": "news.example", "language": "English"}
+]}
