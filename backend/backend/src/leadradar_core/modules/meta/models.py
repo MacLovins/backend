@@ -32,7 +32,7 @@ class LLMCall(Base, CoreTableMixin):
 
 class LLMCache(Base):
     __tablename__ = "llm_cache"
-    __table_args__ = {"schema": "core"}
+    __table_args__ = ({"schema": "core"},)
 
     key: Mapped[str] = mapped_column(String(255), primary_key=True)
     org_id: Mapped[UUID] = mapped_column(nullable=False, default=settings.DEFAULT_ORG_ID)

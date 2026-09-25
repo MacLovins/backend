@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 class Org(Base, CoreTableMixin):
     __tablename__ = "org"
-    __table_args__ = {"schema": "core"}
+    __table_args__ = ({"schema": "core"},)
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 

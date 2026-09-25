@@ -40,12 +40,12 @@ async def get_current_principal(
             role=payload["role"],
             full_name=payload.get("name"),
         )
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
 
 def require_roles(*allowed_roles: Role):

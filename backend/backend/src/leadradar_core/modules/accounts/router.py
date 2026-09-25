@@ -154,7 +154,7 @@ async def delete_company(
 async def import_companies_csv(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
 ) -> CompanyImportReport:
     content = await file.read()
     report = CompanyImportReport()

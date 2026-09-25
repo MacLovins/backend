@@ -205,13 +205,12 @@ async def _seed_presets(session, org_id: UUID, preset_keys: list[str]) -> dict[s
     return services
 
 
-async def _seed_accounts_from_csv(session, org_id: UUID, csv_path: Path) -> dict[str, Company]:
-    if not csv_path.exists():
-        typer.echo(f"Warning: accounts CSV not found at {csv_path}")
+async def _seed_accounts_from_csv(session, org_id: UUID, csv_text: str | None) -> dict[str, Company]:
+    if not csv_text:
+        typer.echo("Warning: accounts CSV is empty or not found")
         return {}
 
-    text_data = csv_path.read_text(encoding="utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text_data))
+    reader = csv.DictReader(io.StringIO(csv_text))
     created_count = 0
     companies = {}
 
@@ -369,7 +368,7 @@ async def _seed_demo_lead_scores(
     typer.echo("Seeded demonstration lead score & verified signals for DHL Group")
 
 
-async def _run_seed(presets: str, accounts: str) -> None:
+async def _run_seed(presets: str, accounts_csv_text: str | None) -> None:
     async with async_session_factory() as session:
         # 1. Seed Default Org
         org = await session.get(Org, settings.DEFAULT_ORG_ID)
@@ -413,8 +412,7 @@ async def _run_seed(presets: str, accounts: str) -> None:
         services = await _seed_presets(session, settings.DEFAULT_ORG_ID, preset_list)
 
         # 4. Seed Demo Accounts
-        accounts_path = Path(accounts)
-        companies = await _seed_accounts_from_csv(session, settings.DEFAULT_ORG_ID, accounts_path)
+        companies = await _seed_accounts_from_csv(session, settings.DEFAULT_ORG_ID, accounts_csv_text)
 
         # 5. Seed DHL Demo Lead Score
         await _seed_demo_lead_scores(session, settings.DEFAULT_ORG_ID, services, companies)
@@ -436,7 +434,9 @@ def seed(
     ),
 ) -> None:
     """Seed initial data (organization, admin/sales users, preset services, and demo accounts)."""
-    asyncio.run(_run_seed(presets, accounts))
+    accounts_path = Path(accounts)
+    csv_text = accounts_path.read_text(encoding="utf-8-sig") if accounts_path.exists() else None
+    asyncio.run(_run_seed(presets, csv_text))
 
 
 if __name__ == "__main__":

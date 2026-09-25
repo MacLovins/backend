@@ -31,16 +31,16 @@ router = APIRouter(prefix="/leads", tags=["leads"])
 async def list_leads(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    service_id: UUID | None = Query(default=None),
-    tier: str | None = Query(default=None),
-    country: str | None = Query(default=None),
-    industry: str | None = Query(default=None),
-    min_priority: float | None = Query(default=None),
-    has_new: bool | None = Query(default=None),
-    q: str | None = Query(default=None),
-    sort: str = Query(default="priority:desc"),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    service_id: Annotated[UUID | None, Query()] = None,
+    tier: Annotated[str | None, Query()] = None,
+    country: Annotated[str | None, Query()] = None,
+    industry: Annotated[str | None, Query()] = None,
+    min_priority: Annotated[float | None, Query()] = None,
+    has_new: Annotated[bool | None, Query()] = None,
+    q: Annotated[str | None, Query()] = None,
+    sort: Annotated[str, Query()] = "priority:desc",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> PaginatedResponse[LeadListItem]:
     base_stmt = (
         select(LeadScore, Company)
@@ -139,8 +139,8 @@ async def list_leads(
 async def export_leads_csv(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    service_id: UUID | None = Query(default=None),
-    tier: str | None = Query(default=None),
+    service_id: Annotated[UUID | None, Query()] = None,
+    tier: Annotated[str | None, Query()] = None,
 ) -> Response:
     stmt = (
         select(LeadScore, Company)
@@ -210,7 +210,7 @@ async def get_lead_detail(
     company_id: UUID,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    service_id: UUID | None = Query(default=None),
+    service_id: Annotated[UUID | None, Query()] = None,
 ) -> LeadDetail:
     company = await session.get(Company, company_id)
     if not company or company.org_id != principal.org_id:

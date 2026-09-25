@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
         except Exception as e:
-            health_status["database"] = f"error: {str(e)}"
+            health_status["database"] = f"error: {e!s}"
             is_ready = False
 
         # Check Redis
@@ -103,7 +103,7 @@ def create_app() -> FastAPI:
                 await r.ping()
                 await r.aclose()
         except Exception as e:
-            health_status["redis"] = f"error: {str(e)}"
+            health_status["redis"] = f"error: {e!s}"
             is_ready = False
 
         if not is_ready:

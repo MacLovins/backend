@@ -77,7 +77,7 @@ async def feedback_lead(
 async def get_quality(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    service_id: UUID | None = Query(default=None),
+    service_id: Annotated[UUID | None, Query()] = None,
 ) -> QualityMetricsOut:
     stmt = select(Feedback).where(Feedback.org_id == principal.org_id)
     if service_id:
