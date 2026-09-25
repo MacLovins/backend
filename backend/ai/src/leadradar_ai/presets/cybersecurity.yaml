@@ -1,0 +1,177 @@
+# Cybersecurity — ARCHITECTURE §3.5. Market: EU (NIS2) + UK/CH/NO, ≥ 250 employees; DORA for finance.
+key: cybersecurity
+name: Cybersecurity
+description: >-
+  Security operations (SOC, managed detection and response), NIS2 / DORA / ISO 27001 readiness, identity
+  and access management, and incident response.
+value_proposition: >-
+  We get regulated companies audit-ready for NIS2 and DORA and run 24/7 detection and response, so
+  security teams close gaps fast without hiring a full SOC.
+decision_makers:
+  - CISO
+  - CIO
+  - Head of IT Security
+  - Head of GRC
+
+icp:
+  countries: [AT, BE, BG, HR, CY, CZ, DK, EE, FI, FR, DE, GR, HU, IE, IT, LV, LT, LU, MT, NL, PL, PT, RO, SK, SI, ES, SE, GB, CH, "NO"]  # quoted: YAML 1.1 reads NO as false
+  employees_min: 250
+  nice_to_have:
+    - kind: industry_in  # NIS2 Annex I and II sectors
+      values: [energy_utilities, oil_gas, airlines, rail, logistics, postal_courier, banking, financial_markets, healthcare, pharma, medical_devices, water, digital_infrastructure, public_sector, chemicals, food_beverage, manufacturing, automotive, telecom]
+      weight: 2
+    - kind: industry_in  # DORA
+      values: [banking, insurance, financial_markets]
+      weight: 1
+
+rules:
+  - name: Too small
+    kind: firmographic
+    condition: {field: employees, op: lt, value: 200}
+    action: exclude
+  - name: Cybersecurity vendor
+    kind: firmographic
+    condition: {field: tags, op: intersects, value: [cybersecurity_vendor]}
+    action: exclude
+  - name: IT or software vendor
+    kind: firmographic
+    condition: {field: industry_ids, op: intersects, value: [it_services, software]}
+    action: flag
+
+questions:
+  - key: cy_incident
+    label: Recent cyber incident
+    text: >-
+      Has the company suffered a cyber incident (ransomware, data breach, or an outage caused by an attack)
+      in the last 18 months?
+    category: incident
+    polarity: positive
+    weight: high
+    source_types: [news, incident]
+    recency_days: 540
+    keywords_seed:
+      en: [ransomware, cyberattack, data breach, hacker attack, IT outage, security incident]
+      de: [Cyberangriff, Hackerangriff, Datenleck, Ransomware, IT-Ausfall]
+      fr: [cyberattaque, rançongiciel, fuite de données, piratage]
+
+  - key: cy_compliance
+    label: Compliance deadline (NIS2, DORA, ISO 27001)
+    text: >-
+      Is the company preparing for NIS2, DORA, ISO 27001, TISAX or the Cyber Resilience Act, or mentioning
+      related audits and deadlines?
+    category: compliance
+    polarity: positive
+    weight: high
+    source_types: [news, website, report, jobs]
+    recency_days: 540
+    keywords_seed:
+      en: [NIS2, DORA, ISO 27001, TISAX, Cyber Resilience Act, compliance audit, operational resilience]
+      de: [NIS2, DORA, ISO 27001, TISAX, IT-Sicherheitsgesetz, KRITIS]
+      fr: [NIS2, DORA, ISO 27001, conformité, résilience opérationnelle]
+
+  - key: cy_hiring
+    label: Hiring security talent
+    text: >-
+      Is the company hiring a CISO, SOC analysts, security engineers, IAM or GRC specialists, or penetration
+      testers?
+    category: hiring
+    polarity: positive
+    weight: high
+    source_types: [jobs]
+    recency_days: 90
+    keywords_seed:
+      en: [SOC, SIEM, security engineer, IAM, GRC, penetration testing, incident response]
+      de: [Informationssicherheit, IT-Sicherheit, SOC, ISMS]
+    job_titles:
+      - CISO
+      - SOC Analyst
+      - Security Engineer
+      - Cyber Security Specialist
+      - IAM Engineer
+      - GRC Manager
+      - Penetration Tester
+      - Information Security Officer
+      - Informationssicherheitsbeauftragter
+    negative_terms: [internship, intern, Praktikum, Werkstudent, apprenticeship, Ausbildung]
+
+  - key: cy_leaders
+    label: New security or IT leader
+    text: Was a new CISO, CIO or CTO appointed in the last 12 months?
+    category: leadership_change
+    polarity: positive
+    weight: medium
+    source_types: [news, website]
+    recency_days: 365
+    keywords_seed:
+      en: [appointed CISO, new chief information security officer, new CIO, new CTO, joins as]
+      de: [ernannt, neuer CISO, neuer CIO, Leiter IT-Sicherheit]
+      fr: [nommé RSSI, nouveau DSI, nomination]
+
+  - key: cy_surface
+    label: Growing attack surface
+    text: >-
+      Is the company's attack surface growing through cloud migration, M&A integration, or OT/IoT and
+      connected-product expansion?
+    category: expansion
+    polarity: positive
+    weight: medium
+    source_types: [news, website, report, jobs]
+    recency_days: 365
+    keywords_seed:
+      en: [cloud migration, acquisition, merger integration, OT security, IoT, connected products]
+      de: [Cloud-Migration, Übernahme, Integration, OT-Sicherheit, vernetzte Produkte]
+      fr: [migration vers le cloud, acquisition, intégration, objets connectés]
+
+  - key: cy_budget
+    label: Security investment
+    text: Has the company announced an increased security budget or a security program?
+    category: investment
+    polarity: positive
+    weight: medium
+    source_types: [news, report]
+    recency_days: 365
+    keywords_seed:
+      en: [cybersecurity investment, security program, security budget, invest in security]
+      de: [Investition in IT-Sicherheit, Sicherheitsprogramm, Cybersicherheit]
+      fr: [investissement cybersécurité, programme de sécurité]
+
+  - key: cy_stack
+    label: Security tools in use
+    text: >-
+      Do job postings mention SIEM, EDR, IAM or zero-trust tools (for example Splunk, Microsoft Sentinel,
+      CrowdStrike, Okta)?
+    category: tech_stack
+    polarity: positive
+    weight: low
+    source_types: [jobs]
+    recency_days: 365
+    keywords_seed:
+      en: [Splunk, Microsoft Sentinel, CrowdStrike, Okta, SentinelOne, QRadar, zero trust, EDR, SIEM]
+
+  - key: cy_mssp
+    label: Existing security provider
+    text: >-
+      Has the company publicly announced a long-term contract with a managed security service provider or a
+      SOC provider?
+    category: tech_partners
+    polarity: negative
+    weight: medium
+    source_types: [news, website]
+    recency_days: 730
+    keywords_seed:
+      en: [managed security services, MSSP, managed SOC, MDR provider, multi-year security contract]
+      de: [Managed Security Services, SOC-Dienstleister, beauftragt]
+
+  - key: cy_inhouse
+    label: Strong in-house security team
+    text: >-
+      Does the company run a large in-house SOC or CERT, or present a public, well-staffed security
+      organization?
+    category: internal_capability
+    polarity: negative
+    weight: medium
+    source_types: [website, report]
+    recency_days: 730
+    keywords_seed:
+      en: [in-house SOC, CERT, CSIRT, security operations center, our security team]
+      de: [eigenes SOC, CERT, Sicherheitsteam]

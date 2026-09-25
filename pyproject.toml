@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.14"
 package = false
 
 [tool.uv.workspace]
-members = ["parser"]
+members = ["parser", "backend/ai"]
 
 [dependency-groups]
 dev = [
@@ -21,7 +21,7 @@ dev = [
 addopts = "-ra"
 asyncio_mode = "auto"
 markers = ["live: tests that access public network services"]
-testpaths = ["parser/tests"]
+testpaths = ["parser/tests", "backend/ai/tests"]
 
 [tool.ruff]
 line-length = 110
@@ -33,3 +33,10 @@ exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+# × and − are used on purpose in formulas (docstrings, CLI output)
+allowed-confusables = ["×", "−"]
+
+[tool.ruff.lint.per-file-ignores]
+# the quote verifier normalizes exactly these typographic characters, and its tests use them
+"backend/ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
+"backend/ai/tests/test_verification.py" = ["RUF001"]
