@@ -1,9 +1,9 @@
-# backend/backend — ТЗ (`leadradar-core`)
+# core — ТЗ (`leadradar-core`)
 
 > **Роль:** приложение. REST API и SSE для фронтенда, БД и миграции, очередь и worker, исполнение графа ai
 > с реальными адаптерами, импорт и автопоиск аккаунтов, лиды, фидбек, метрики, сиды, деплой.
-> **Владелец:** P1 — Backend lead · **Зависит от:** `parser`, `backend/ai`, `backend/auth` (только их публичный API)
-> **Связано:** [ARCHITECTURE.md](../../ARCHITECTURE.md) §4.2–4.11 · [backend/SPEC.md](../SPEC.md) (общие правила бэкенда)
+> **Владелец:** P1 — Backend lead · **Зависит от:** `parser`, `ai`, `auth` (только их публичный API)
+> **Связано:** [ARCHITECTURE.md](../ARCHITECTURE.md) §4.2–4.11 · [BACKEND.md](../BACKEND.md) (общие правила бэкенда)
 > **Закрывает:** K2, K4 (через API), K5, K6 · S1–S5, S10, S15 (экспорт), S17, S18 · A1, A6 · U2, U6, U8–U11
 
 ---
@@ -61,7 +61,7 @@
 | CO-20 | `GET /leads/export.csv` (формат, пригодный для импорта в CRM) | P1 | `pytest -k export` |
 | CO-21 | `GET /meta/usage`: вызовы и токены LLM за сутки по моделям против лимитов, документы по источникам | P1 | `pytest -k usage` |
 | CO-22 | Scheduler: cron `refresh_tracked` (по умолчанию раз в 6 ч, инкрементально) + `resume_paused` раз в 15 мин | P1 | Ручной прогон задачи |
-| CO-23 | `backend/Dockerfile` (один образ), `docker-compose.yml` (`web` собирается из соседнего `../frontend`), `Caddyfile`, `cloudflared`, `.env.example` | P0 | `docker compose up` — всё healthy |
+| CO-23 | `Dockerfile` (один образ), `docker-compose.yml` (`web` собирается из соседнего `../frontend`), `Caddyfile`, `cloudflared`, `.env.example` | P0 | `docker compose up` — всё healthy |
 | CO-24 | CI (GitHub Actions): ruff, pytest (Postgres service), import-linter, снимок OpenAPI | P0 | Зелёный пайплайн |
 | CO-A1 | Надстройка: `POST /leads/{company_id}/outreach` → `ai.generate_outreach` | После ядра | ARCHITECTURE §4.13 |
 | CO-A2 | Надстройка: потребитель алертов (`signal.detected` сильный, `lead.tier_changed` → Telegram / e-mail) | После ядра | — |
@@ -208,13 +208,13 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 HUBSPOT_PRIVATE_APP_TOKEN=
 CF_TUNNEL_TOKEN=
-# + переменные AUTH_* (backend/auth), LLM_* и AI_* (backend/ai), PARSER_* (parser)
+# + переменные AUTH_* (auth), LLM_* и AI_* (ai), PARSER_* (parser)
 ```
 
 ### 1.6 Структура папки
 
 ```
-backend/backend/
+core/
 ├── SPEC.md
 ├── pyproject.toml                       # name = "leadradar-core"; scripts: lr = "leadradar_core.cli:app"
 ├── alembic.ini · migrations/            # env.py: target_metadata = [core_metadata, auth_metadata]

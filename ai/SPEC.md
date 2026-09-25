@@ -1,9 +1,9 @@
-# backend/ai — ТЗ (`leadradar-ai`)
+# ai — ТЗ (`leadradar-ai`)
 
 > **Роль:** AI-движок: граф анализа компании (LangGraph), LLM-шлюз Gemini, префильтр, извлечение сигналов
 > с цитатами, их проверка кодом, объяснимый скоринг, пресеты услуг, оценка качества.
-> **Владелец:** P3 — AI engineer · **Потребитель:** `backend/backend` (worker, пересчёт, конфигурация)
-> **Связано:** [ARCHITECTURE.md](../../ARCHITECTURE.md) §3.3–3.5 (сигналы, скоринг, пресеты), §4.5 (потоки), §4.7 (контракты), §4.8 (квоты Gemini)
+> **Владелец:** P3 — AI engineer · **Потребитель:** `core` (worker, пересчёт, конфигурация)
+> **Связано:** [ARCHITECTURE.md](../ARCHITECTURE.md) §3.3–3.5 (сигналы, скоринг, пресеты), §4.5 (потоки), §4.7 (контракты), §4.8 (квоты Gemini)
 > **Закрывает:** K1, K2, K3, K5 · S2–S5, S11–S13, S16, S17 · A1–A6
 
 ---
@@ -261,7 +261,7 @@ LANGSMITH_TRACING=false                                               # опци
 ### 1.6 Структура папки
 
 ```
-backend/ai/
+ai/
 ├── SPEC.md
 ├── pyproject.toml                    # name = "leadradar-ai"; scripts: lr-ai = "leadradar_ai.cli:app"
 ├── src/leadradar_ai/

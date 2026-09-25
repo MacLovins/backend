@@ -1,7 +1,7 @@
 # P3 — AI и LLM
 
 > Памятка для бэкендера, который отвечает за граф анализа, Gemini, извлечение сигналов и скоринг.
-> Подробное ТЗ: [backend/ai/SPEC.md](../../backend/ai/SPEC.md) · общая картина: [ARCHITECTURE.md](../../ARCHITECTURE.md) §3.3–3.5, §4.8.
+> Подробное ТЗ: [ai/SPEC.md](../../ai/SPEC.md) · общая картина: [ARCHITECTURE.md](../../ARCHITECTURE.md) §3.3–3.5, §4.8.
 
 ---
 
@@ -13,7 +13,7 @@ AI/ML-инновации (20%).
 
 | Отвечаешь за | Где |
 |---|---|
-| Граф LangGraph: resolve → collect → index → prefilter → extract → verify → score | `backend/ai/src/leadradar_ai/pipeline/` |
+| Граф LangGraph: resolve → collect → index → prefilter → extract → verify → score | `ai/src/leadradar_ai/pipeline/` |
 | LLM-шлюз Gemini: structured output, лимиты, fallback-модели, кэш | `llm/` |
 | Префильтр: нарезка, эмбеддинги, BM25 + векторы | `retrieval/` |
 | Промпты и примеры | `prompts/` |
@@ -28,7 +28,7 @@ AI/ML-инновации (20%).
 
 ## 2. Первые 2 часа (M0)
 
-1. `contracts.py` и `ports.py` — договориться с P1 о портах ([backend/ai/SPEC.md](../../backend/ai/SPEC.md) §1.4).
+1. `contracts.py` и `ports.py` — договориться с P1 о портах ([ai/SPEC.md](../../ai/SPEC.md) §1.4).
 2. **Лимиты Gemini:** AI Studio → Rate limits → записать RPM и RPD моделей в `LLM_LIMITS_JSON`. Лимиты считаются на
    проект: у каждого разработчика свой проект и ключ, у demo-сервера — отдельный.
 3. Проверить, какие Flash-модели доступны на бесплатном тарифе, заполнить `LLM_MAIN_MODELS` и `LLM_CHEAP_MODELS`.
@@ -66,7 +66,7 @@ LLM только извлекает факты, считает код. Поэт�
 - Можно отвечать `unclear`: лучше промолчать, чем выдумать.
 - Любая правка промпта → новая версия (`extract_signals@v2`), затем прогон evals.
 
-Каркас промпта — [backend/ai/SPEC.md](../../backend/ai/SPEC.md) §1.7.3.
+Каркас промпта — [ai/SPEC.md](../../ai/SPEC.md) §1.7.3.
 
 ---
 
@@ -166,7 +166,7 @@ Priority = 100 · (Fit/100)^0.4 · (Intent/100)^0.6 · (1 − 0.5·Risk/100)
 ## 12. Промпт для Claude Code
 
 ```text
-Контекст: @ARCHITECTURE.md §3.4, @backend/ai/SPEC.md §1.4.2 и §1.7.5.
+Контекст: @ARCHITECTURE.md §3.4, @ai/SPEC.md §1.4.2 и §1.7.5.
 Задача: AI-09 — модуль scoring (fit_score, evaluate_rules, score_company). Вне рамок: граф, LLM.
 Сначала тесты: пример DHL из §1.7.5 (ожидаемо intent 81.3, risk 38.1, priority 69.2) + свойства монотонности.
 Проверка: `uv run --package leadradar-ai pytest -k scoring`. Сначала план.

@@ -7,7 +7,7 @@ requires-python = ">=3.12,<3.14"
 package = false
 
 [tool.uv.workspace]
-members = ["parser", "backend/ai"]
+members = ["parser", "ai"]
 
 [dependency-groups]
 dev = [
@@ -21,7 +21,7 @@ dev = [
 addopts = "-ra"
 asyncio_mode = "auto"
 markers = ["live: tests that access public network services"]
-testpaths = ["parser/tests", "backend/ai/tests"]
+testpaths = ["parser/tests", "ai/tests"]
 
 [tool.ruff]
 line-length = 110
@@ -38,5 +38,5 @@ allowed-confusables = ["×", "−"]
 
 [tool.ruff.lint.per-file-ignores]
 # the quote verifier normalizes exactly these typographic characters, and its tests use them
-"backend/ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
-"backend/ai/tests/test_verification.py" = ["RUF001"]
+"ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
+"ai/tests/test_verification.py" = ["RUF001"]

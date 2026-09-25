@@ -1,4 +1,4 @@
-# Companies of the golden set and the parser fixture each one is analysed on (fixtures: backend/ai/tests/fixtures).
+# Companies of the golden set and the parser fixture each one is analysed on (fixtures: ai/tests/fixtures).
 # Employee counts are approximate: they only affect Fit and size rules.
 - domain: dhl.com
   name: DHL Group

@@ -1,10 +1,10 @@
 # LeadRadar — архитектура, этапы, план
 
 > **Единый источник правды** по архитектуре, контрактам между папками и плану на 48 часов.
-> **Репозитории:** [MacLovins/backend](https://github.com/MacLovins/backend) — этот файл, `parser/`, `backend/` ·
+> **Репозитории:** [MacLovins/backend](https://github.com/MacLovins/backend) — этот файл, `parser/`, `ai/`, `auth/`, `core/` ·
 > [MacLovins/frontend](https://github.com/MacLovins/frontend) — SPA. Клонируйте оба рядом: `LeadRadar/backend`, `LeadRadar/frontend`.
-> ТЗ по папкам: [parser](parser/SPEC.md) · [frontend](https://github.com/MacLovins/frontend/blob/main/SPEC.md) · [backend](backend/SPEC.md) →
-> [backend/backend](backend/backend/SPEC.md) · [backend/ai](backend/ai/SPEC.md) · [backend/auth](backend/auth/SPEC.md)
+> ТЗ по папкам: [parser](parser/SPEC.md) · [frontend](https://github.com/MacLovins/frontend/blob/main/SPEC.md) · [общие правила бэкенда](BACKEND.md) ·
+> [core](core/SPEC.md) · [ai](ai/SPEC.md) · [auth](auth/SPEC.md)
 >
 > Версия 1.0 · 2026-09-25 · Документация на русском, код, UI и идентификаторы на английском.
 
@@ -190,7 +190,7 @@
 | `internal_capability` | Сильные собственные компетенции (негатив) | In-house automation CoE | A5 |
 | `distress` | Блокеры расходов: неплатёжеспособность, заморозка найма | Hiring freeze, insolvency | S4 |
 
-### 3.4 Модель скоринга (сводка; формулы и тесты — в [backend/ai/SPEC.md](backend/ai/SPEC.md) §1.7)
+### 3.4 Модель скоринга (сводка; формулы и тесты — в [ai/SPEC.md](ai/SPEC.md) §1.7)
 
 ```
 вклад evidence  v = strength × confidence × reliability(source) × 0.5^(age_days / half_life(source))
@@ -207,7 +207,7 @@ Tier            = disqualified (правило) | hot ≥ 65 | warm ≥ 40 | col
 Readiness (готовность) = Intent: свежие триггеры весят больше. Likelihood (вероятность) видна как пара Fit × (1 − Risk).
 Ранжирование основано на матрице Fit × Intent, а не на сумме (P15).
 
-### 3.5 Пресеты демо (U7). Полные YAML — в `backend/ai/src/leadradar_ai/presets/`
+### 3.5 Пресеты демо (U7). Полные YAML — в `ai/src/leadradar_ai/presets/`
 
 **Intelligent Automation (IA)** — ICP: EU/UK/CH/NO, ≥ 1 000 сотрудников; приоритетные индустрии: логистика и транспорт,
 авиаперевозки, производство, ритейл, банки и страхование, телеком, энергетика.
@@ -285,10 +285,10 @@ P1 внутри 48 ч (по убыванию пользы): Google News RSS, GLE
 └───────────┬───────────────────────────────────────────────────┬───────────────┘
             │ SPA                                               │ REST /api/v1 (cookie-JWT), SSE
 ┌───────────▼───────────────┐              ┌────────────────────▼──────────────────────────┐
-│ frontend/  React 19 SPA   │              │ api — backend/backend (leadradar-core)        │
+│ frontend/  React 19 SPA   │              │ api — core (leadradar-core)                   │
 │ Prospects · Company ·     │              │ FastAPI: config · accounts · runs · leads ·   │
 │ Accounts · Discovery ·    │              │ feedback · meta · activity                    │
-│ Runs · Settings · Quality │              │ + router и dependencies из backend/auth       │
+│ Runs · Settings · Quality │              │ + router и dependencies из auth               │
 └───────────────────────────┘              └───────┬───────────────────────┬───────────────┘
                                      enqueue (Taskiq) │                       │ SQLAlchemy async
                                     ┌─────────────────▼──┐       ┌────────────▼──────────────────┐
@@ -299,11 +299,11 @@ P1 внутри 48 ч (по убыванию пользы): Google News RSS, GLE
                                               │                               │
                                ┌──────────────┴───────────────────────────────┴────┐
                                │ worker + scheduler (тот же образ leadradar-core)    │
-                               │ исполняет граф LangGraph из backend/ai              │
+                               │ исполняет граф LangGraph из ai                      │
                                └──────┬─────────────────────────────────┬───────────┘
                                       │ Collector-порт                  │ LLMClient-порт
                          ┌────────────▼────────────┐       ┌────────────▼────────────────┐
-                         │ parser/ (библиотека)    │       │ backend/ai (библиотека)     │
+                         │ parser/ (библиотека)    │       │ ai (библиотека)             │
                          │ адаптеры источников,    │       │ граф, prefilter, extract,   │
                          │ нормализация, discovery │       │ verify, scoring, presets    │
                          └────────────┬────────────┘       └────────────┬────────────────┘
@@ -317,15 +317,16 @@ P1 внутри 48 ч (по убыванию пользы): Google News RSS, GLE
 
 ### 4.3 Папки: роль, связи, владелец
 
-Репо `MacLovins/backend` содержит `parser/` и `backend/` (один uv workspace), репо `MacLovins/frontend` — SPA.
+Репо `MacLovins/backend` содержит `parser/`, `ai/`, `auth/` и `core/` (один uv workspace) и общие правила бэкенда
+в `BACKEND.md`, репо `MacLovins/frontend` — SPA.
 
 | Папка | Пакет / артефакт | Роль | Зависит от | Кто использует | Владелец |
 |---|---|---|---|---|---|
 | `parser/` | `leadradar-parser` (lib + CLI `lr-parser`) | Сбор и нормализация публичных данных, автопоиск компаний, резолв компании (домен, careers, ATS), таксономия индустрий | внешние источники | core (адаптер `Collector`, discovery, meta) | P2 — Data engineer |
-| `backend/ai/` | `leadradar-ai` (lib + CLI `lr-ai`) | Граф анализа (LangGraph), LLM-шлюз Gemini, префильтр, извлечение, верификация, скоринг, пресеты, evals | внешние: Gemini, fastembed | core (worker, rescore, config) | P3 — AI engineer |
-| `backend/auth/` | `leadradar-auth` (lib + CLI `lr-auth`) | Пользователи, логин, JWT, роли, `Principal` | — | core (роутер и dependencies) | P1 |
-| `backend/backend/` | `leadradar-core` (app + CLI `lr`) | REST API, БД и миграции, worker, SSE, импорт, discovery, лиды, фидбек, метрики, сиды, деплой | parser, ai, auth | frontend | P1 — Backend lead |
-| `backend/` | папка-группа | Общие правила бэкенда: workspace, процессы, владение БД, границы | — | — | P1 |
+| `ai/` | `leadradar-ai` (lib + CLI `lr-ai`) | Граф анализа (LangGraph), LLM-шлюз Gemini, префильтр, извлечение, верификация, скоринг, пресеты, evals | внешние: Gemini, fastembed | core (worker, rescore, config) | P3 — AI engineer |
+| `auth/` | `leadradar-auth` (lib + CLI `lr-auth`) | Пользователи, логин, JWT, роли, `Principal` | — | core (роутер и dependencies) | P1 |
+| `core/` | `leadradar-core` (app + CLI `lr`) | REST API, БД и миграции, worker, SSE, импорт, discovery, лиды, фидбек, метрики, сиды, деплой | parser, ai, auth | frontend | P1 — Backend lead |
+| `BACKEND.md`, `Dockerfile` | общие правила и образ | Workspace, процессы, владение БД, границы; один образ для api / worker / scheduler | — | — | P1 |
 | `frontend/` | SPA (Vite) | Дашборд продажника и настройки администратора | OpenAPI core | пользователи | F1 (sales UX), F2 (admin UX) |
 
 ### 4.4 Правила зависимостей (проверяет import-linter в CI)
@@ -341,7 +342,7 @@ frontend ──▶ только HTTP API core (сгенерированный к
 ```
 
 Общих «shared»-библиотек нет. У каждого пакета свои контракты (Pydantic), `core` явно преобразует их в
-`backend/backend/src/leadradar_core/adapters/`. Небольшое дублирование полей — осознанная плата за то, что на этапе 2
+`core/src/leadradar_core/adapters/`. Небольшое дублирование полей — осознанная плата за то, что на этапе 2
 пакеты выносятся в сервисы без переписывания.
 
 ### 4.5 Ключевые потоки
@@ -383,7 +384,7 @@ fingerprint (версии вопросов + id фрагментов) занов
 
 ### 4.6 Данные и владение
 
-Postgres 16 + pgvector. Владелец схемы `core` — `backend/backend` (Alembic). Схема `auth` — `backend/auth`
+Postgres 16 + pgvector. Владелец схемы `core` — `core` (Alembic). Схема `auth` — `auth`
 (свой `MetaData`, миграции подключены в тот же Alembic env). Схема `langgraph` — чекпоинты
 (`AsyncPostgresSaver.setup()`). Внешних ключей между схемами нет: на этапе 2 `auth` уезжает отдельно.
 
@@ -409,17 +410,17 @@ Postgres 16 + pgvector. Владелец схемы `core` — `backend/backend`
 | `domain_event` | Outbox | type, payload, created_at, processed_at |
 | `auth.user_account` | Пользователь | email, password_hash, full_name, role, org_id, is_active |
 
-Во всех таблицах `core` есть `org_id`, `created_at`, `updated_at`. Детали — в SPEC `backend/backend` §1.4.
+Во всех таблицах `core` есть `org_id`, `created_at`, `updated_at`. Детали — в SPEC `core` §1.4.
 
 ### 4.7 Контракты между папками
 
 | Граница | Тип | Где определён | Версионирование |
 |---|---|---|---|
-| frontend ↔ core | REST + SSE, OpenAPI 3.1 | `backend/backend` §1.4; снимок `openapi.json` в корне репо backend, копия во frontend (`npm run sync:api`) | `/api/v1`; тест в CI backend: снимок = живой OpenAPI |
+| frontend ↔ core | REST + SSE, OpenAPI 3.1 | `core` §1.4; снимок `openapi.json` в корне репо backend, копия во frontend (`npm run sync:api`) | `/api/v1`; тест в CI backend: снимок = живой OpenAPI |
 | core → parser | Python API: `resolve_company`, `collect`, `discover`, `industry_taxonomy` | `parser/SPEC.md` §1.4 | Поля Pydantic только добавляются, не удаляются |
-| core → ai | Python API: `build_analysis_graph`, `score_company`, `fit_score`, `expand_question`, пресеты | `backend/ai/SPEC.md` §1.4 | То же |
-| ai → core | Порты (Protocol): `Collector`, `AnalysisStore`, `ProgressSink`, `LLMCache`, `UsageSink` | `backend/ai/SPEC.md` §1.4 | Порт меняется только по согласию P1 и P3 |
-| core → auth | `create_auth_router`, `get_current_principal`, `require_roles`, `Principal` | `backend/auth/SPEC.md` §1.4 | JWT-claims: `sub`, `org`, `role`, `exp`, `iat` |
+| core → ai | Python API: `build_analysis_graph`, `score_company`, `fit_score`, `expand_question`, пресеты | `ai/SPEC.md` §1.4 | То же |
+| ai → core | Порты (Protocol): `Collector`, `AnalysisStore`, `ProgressSink`, `LLMCache`, `UsageSink` | `ai/SPEC.md` §1.4 | Порт меняется только по согласию P1 и P3 |
+| core → auth | `create_auth_router`, `get_current_principal`, `require_roles`, `Principal` | `auth/SPEC.md` §1.4 | JWT-claims: `sub`, `org`, `role`, `exp`, `iat` |
 
 **Канонические перечисления** (одинаковые в Python, OpenAPI и TS):
 
@@ -474,21 +475,21 @@ role:        admin | sales
 LeadRadar/
 ├── backend/                    # github.com/MacLovins/backend — uv workspace + инфраструктура
 │   ├── ARCHITECTURE.md · openapi.json (снимок API — источник правды для фронта)
-│   ├── pyproject.toml          # корень uv workspace (members: parser, backend/*) + ruff, pytest, import-linter
+│   ├── BACKEND.md              # общие правила бэкенда (процессы, границы, соглашения)
+│   ├── pyproject.toml          # корень uv workspace (members: parser, ai, auth, core) + ruff, pytest, import-linter
 │   ├── uv.lock · .env.example · docker-compose.yml · Caddyfile · .github/workflows/ci.yml
+│   ├── Dockerfile              # один образ для api / worker / scheduler (контекст сборки — корень репо)
 │   ├── parser/                 # leadradar-parser
-│   └── backend/
-│       ├── SPEC.md · Dockerfile  # один образ для api / worker / scheduler (контекст сборки — корень репо)
-│       ├── ai/                 # leadradar-ai
-│       ├── auth/               # leadradar-auth
-│       └── backend/            # leadradar-core
+│   ├── ai/                     # leadradar-ai
+│   ├── auth/                   # leadradar-auth
+│   └── core/                   # leadradar-core
 └── frontend/                   # github.com/MacLovins/frontend — SPA: SPEC.md, openapi.json (копия), Dockerfile, CI
 ```
 
 ### 4.10 План на 48 часов
 
-**Роли:** P1 — Backend lead (`backend/backend` + `backend/auth` + деплой) · P2 — Data engineer (`parser`) ·
-P3 — AI engineer (`backend/ai`) · F1 — Frontend, сторона продаж (Prospects, Company, Runs, shell) ·
+**Роли:** P1 — Backend lead (`core` + `auth` + деплой) · P2 — Data engineer (`parser`) ·
+P3 — AI engineer (`ai`) · F1 — Frontend, сторона продаж (Prospects, Company, Runs, shell) ·
 F2 — Frontend, сторона администратора (Settings, Accounts, Discovery, Quality).
 
 | Окно | Веха | P1 | P2 | P3 | F1 | F2 |
@@ -599,9 +600,9 @@ P1 и P3 спят в разное время.
 | MVP | Этап 2 | Что добавляется | Что остаётся как есть |
 |---|---|---|---|
 | `parser` (lib, вызывается воркером) | Ingestion service | HTTP/queue-обёртка, планировщик свежести, пул браузеров, S3, здоровье источников | Адаптеры, контракт `Document`, HTTP-слой |
-| `backend/ai` (lib + граф) | Intelligence + Scoring & ML + Research agent | Отдельные воркеры графа, роутер моделей, Batch API, судья, ML-модель | Узлы графа, промпты, порты, контракты, формула как prior |
-| `backend/auth` (lib) | Identity (свой сервис или Keycloak/ZITADEL) | OIDC SSO, MFA, refresh-ротация, API-ключи, SCIM, аудит | `Principal`, `require_roles`, JWT-claims |
-| `backend/backend` (api + worker) | Gateway/BFF + доменные сервисы | Шина событий, RLS, кэш, публичный API | REST `/api/v1`, схемы, outbox, модули |
+| `ai` (lib + граф) | Intelligence + Scoring & ML + Research agent | Отдельные воркеры графа, роутер моделей, Batch API, судья, ML-модель | Узлы графа, промпты, порты, контракты, формула как prior |
+| `auth` (lib) | Identity (свой сервис или Keycloak/ZITADEL) | OIDC SSO, MFA, refresh-ротация, API-ключи, SCIM, аудит | `Principal`, `require_roles`, JWT-claims |
+| `core` (api + worker) | Gateway/BFF + доменные сервисы | Шина событий, RLS, кэш, публичный API | REST `/api/v1`, схемы, outbox, модули |
 | `frontend` | SPA + Chrome-расширение | Новые features | Структура features, сгенерированный клиент |
 
 Механика перехода: реализация порта заменяется, например `ParserCollector` (вызов функции) → `HttpCollector`

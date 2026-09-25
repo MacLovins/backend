@@ -1,9 +1,9 @@
-# backend/auth — ТЗ (`leadradar-auth`)
+# auth — ТЗ (`leadradar-auth`)
 
 > **Роль:** пользователи, вход по email и паролю, JWT в httpOnly-cookie (и Bearer для API-клиентов), роли
 > `admin` и `sales`, объект `Principal` для остальных модулей.
-> **Владелец:** P1 (≈ 3 ч в окне H2–H8) · **Потребитель:** `backend/backend` (роутер + dependencies)
-> **Связано:** [ARCHITECTURE.md](../../ARCHITECTURE.md) §4.3, §4.7 · [backend/SPEC.md](../SPEC.md)
+> **Владелец:** P1 (≈ 3 ч в окне H2–H8) · **Потребитель:** `core` (роутер + dependencies)
+> **Связано:** [ARCHITECTURE.md](../ARCHITECTURE.md) §4.3, §4.7 · [BACKEND.md](../BACKEND.md)
 > **Закрывает:** U11 · K4 (роли: продажник не видит лишнего) · K5 (безопасность) · K6 (заготовка под SSO и мультитенантность)
 
 ---
@@ -121,7 +121,7 @@ AUTH_DEFAULT_ORG_ID=        # единственная организация MV
 ### 1.6 Структура папки
 
 ```
-backend/auth/
+auth/
 ├── SPEC.md
 ├── pyproject.toml              # name = "leadradar-auth"; scripts: lr-auth = "leadradar_auth.cli:app"
 ├── src/leadradar_auth/

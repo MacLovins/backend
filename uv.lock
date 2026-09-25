@@ -761,7 +761,7 @@ wheels = [
 [[package]]
 name = "leadradar-ai"
 version = "0.1.0"
-source = { editable = "backend/ai" }
+source = { editable = "ai" }
 dependencies = [
     { name = "fastembed" },
     { name = "google-genai" },

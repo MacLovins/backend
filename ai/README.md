@@ -2,7 +2,7 @@
 
 AI-движок LeadRadar: из публичных документов о компании — **проверенные сигналы с дословными цитатами** и
 **объяснимый скор** (Fit × Intent × (1 − Risk) → Priority, Tier, «почему сейчас»).
-ТЗ: [SPEC.md](SPEC.md) · архитектура: [ARCHITECTURE.md](../../ARCHITECTURE.md) §3.3–3.5, §4.8.
+ТЗ: [SPEC.md](SPEC.md) · архитектура: [ARCHITECTURE.md](../ARCHITECTURE.md) §3.3–3.5, §4.8.
 
 ```
 документы ─▶ index ─▶ prefilter ─▶ extract (1 вызов Gemini на услугу) ─▶ verify (код) ─▶ score (формула)
@@ -13,14 +13,14 @@ LLM только извлекает факты с цитатами. Цитату
 ## Быстрый старт
 
 ```bash
-cd backend/ai
+cd ai
 uv sync                                   # до появления корневого workspace — из папки пакета
 uv run pytest                             # без сети, ~2 с
 uv run pytest --live                      # + живые тесты (скачивают модель e5, ~0.5 ГБ)
 uvx ruff check --line-length 110 src tests
 ```
 
-Ключ и модели — в `.env` (пример: [../../.env.example](../../.env.example)):
+Ключ и модели — в `.env` (пример: [../.env.example](../.env.example)):
 `GEMINI_API_KEY` (или `GOOGLE_API_KEY`), `LLM_MAIN_MODELS`, `LLM_CHEAP_MODELS`, `LLM_LIMITS_JSON` — реальные RPM/RPD
 из AI Studio → Rate limits (лимиты считаются на проект, не на ключ).
 

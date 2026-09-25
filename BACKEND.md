@@ -1,11 +1,11 @@
-# backend — ТЗ группы (общие правила серверной части)
+# Бэкенд — общие правила серверной части
 
-> **Роль папки:** объединяет три Python-пакета серверной части и задаёт для них общие правила: процессы, границы,
-> владение БД, соглашения, сборку и CI. Также здесь лежит `Dockerfile` единого образа.
+> **Роль:** общие правила для Python-пакетов репо (`parser`, `ai`, `auth`, `core`): процессы, границы,
+> владение БД, соглашения, сборка и CI. `Dockerfile` единого образа лежит в корне репо.
 > **Владелец:** P1 — Backend lead
-> **Подпапки:** [backend/backend](backend/SPEC.md) (`leadradar-core`, приложение) · [backend/ai](ai/SPEC.md)
-> (`leadradar-ai`, AI-движок) · [backend/auth](auth/SPEC.md) (`leadradar-auth`, вход и роли)
-> **Связано:** [ARCHITECTURE.md](../ARCHITECTURE.md) §4.2–4.4, §4.6, §4.9, §5.3
+> **Пакеты:** [core](core/SPEC.md) (`leadradar-core`, приложение) · [ai](ai/SPEC.md)
+> (`leadradar-ai`, AI-движок) · [auth](auth/SPEC.md) (`leadradar-auth`, вход и роли)
+> **Связано:** [ARCHITECTURE.md](ARCHITECTURE.md) §4.2–4.4, §4.6, §4.9, §5.3
 > **Закрывает:** U1, U3, U10 · K5 (надёжность и сборка) · S16 (стек)
 
 ---
@@ -21,13 +21,13 @@
 ### 1.2 Архитектура бэкенда
 
 ```
-             ┌──────────── один Docker-образ (backend/Dockerfile), разные команды ─────────────┐
+             ┌──────────── один Docker-образ (Dockerfile), разные команды ──────────────────────┐
              │  api        uvicorn leadradar_core.main:app                                      │
              │  worker     taskiq worker leadradar_core.worker.broker:broker                    │
              │  scheduler  taskiq scheduler leadradar_core.worker.broker:scheduler  (P1 cron)   │
              └─────────────────────────────────────────────────────────────────────────────────┘
-leadradar_core (backend/backend) ──импортирует публичный API──▶ leadradar_ai (backend/ai)
-                                 ──────────────────────────────▶ leadradar_auth (backend/auth)
+leadradar_core (core) ──импортирует публичный API──▶ leadradar_ai (ai)
+                                 ──────────────────────────────▶ leadradar_auth (auth)
                                  ──────────────────────────────▶ leadradar_parser (parser/)
 leadradar_ai ──порты (Protocol)──▶ реализации в leadradar_core/adapters (SQL, Redis, parser)
 ```
@@ -38,13 +38,13 @@ leadradar_ai ──порты (Protocol)──▶ реализации в leadra
 | `worker` | Граф анализа, генерация ключевых слов; держит в памяти модель эмбеддингов, клиент Gemini, чекпоинтер | 1 процесс, `--max-async-tasks 3` (лимитер LLM — внутри процесса) |
 | `scheduler` | Cron: обновление отслеживаемых компаний, продолжение прогонов на паузе, диспетчер outbox | 1 процесс (P1) |
 
-### 1.3 Функции группы
+### 1.3 Функции
 
 | ID | Функция | Пр. | Проверка |
 |---|---|---|---|
 | BE-01 | uv workspace: корневой `pyproject.toml` (members, dev-группа, ruff, pytest, import-linter), один `uv.lock` | P0 | `uv sync --all-packages` |
 | BE-02 | Контракты импорта (import-linter) §1.5 | P0 | `uv run lint-imports` |
-| BE-03 | `backend/Dockerfile`: python 3.12-slim + uv, слой зависимостей, прогрев модели эмбеддингов | P0 | `docker build -f backend/Dockerfile .` |
+| BE-03 | `Dockerfile`: python 3.12-slim + uv, слой зависимостей, прогрев модели эмбеддингов | P0 | `docker build -f Dockerfile .` |
 | BE-04 | Общие соглашения §1.6 (settings, логи, ошибки, время, id, тесты) | P0 | Ревью |
 | BE-05 | Тестовая инфраструктура: Postgres-фикстура для core (Alembic upgrade один раз на сессию, транзакция с откатом на тест), `@pytest.mark.live` вне CI | P0 | `uv run pytest` |
 | BE-06 | Корневой `CLAUDE.md` (≤ 20 строк): команды, ссылки на ARCHITECTURE и SPEC, правила границ, «тесты без сети» | P0 | Файл есть |
@@ -53,7 +53,7 @@ leadradar_ai ──порты (Protocol)──▶ реализации в leadra
 
 | Ресурс | Владелец | Кто ещё пользуется | Правило |
 |---|---|---|---|
-| Схема `core` (Alembic) | leadradar-core | — | Миграции только в `backend/backend/migrations`, имя `YYYY-MM-DD_slug.py` |
+| Схема `core` (Alembic) | leadradar-core | — | Миграции только в `core/migrations`, имя `YYYY-MM-DD_slug.py` |
 | Схема `auth` | leadradar-auth (`auth_metadata`) | core читает через API пакета | Миграции в том же Alembic env (список metadata); без FK из `core` |
 | Схема `langgraph` | чекпоинтер LangGraph | ai через порт | Создаётся `AsyncPostgresSaver.setup()` при старте worker |
 | Redis | core | ai не знает о Redis | Очередь Taskiq + канал `run:{id}` |
@@ -64,7 +64,7 @@ leadradar_ai ──порты (Protocol)──▶ реализации в leadra
 
 ```toml
 [tool.uv.workspace]
-members = ["parser", "backend/ai", "backend/auth", "backend/backend"]
+members = ["parser", "ai", "auth", "core"]
 
 [tool.importlinter]
 root_packages = ["leadradar_parser", "leadradar_ai", "leadradar_auth", "leadradar_core"]
@@ -108,14 +108,14 @@ forbidden_modules = ["leadradar_ai.pipeline", "leadradar_ai.llm", "leadradar_ai.
 ```bash
 uv sync --all-packages                                   # установить всё
 docker compose up -d postgres redis                      # инфраструктура для разработки
-uv run --package leadradar-core alembic -c backend/backend/alembic.ini upgrade head
+uv run --package leadradar-core alembic -c core/alembic.ini upgrade head
 uv run --package leadradar-core uvicorn leadradar_core.main:app --reload
 uv run --package leadradar-core taskiq worker leadradar_core.worker.broker:broker --max-async-tasks 3
 uv run pytest                                            # все тесты (без сети)
 uv run lint-imports && uv run ruff check . && uv run ruff format --check .
 ```
 
-### 1.8 Критерии готовности (DoD группы)
+### 1.8 Критерии готовности (DoD бэкенда)
 
 - [ ] `uv sync --all-packages` и `uv run pytest` проходят на чистой машине; `lint-imports` и `ruff` зелёные в CI.
 - [ ] Образ собирается ≤ 5 мин и запускает все три процесса; модель эмбеддингов уже в образе.

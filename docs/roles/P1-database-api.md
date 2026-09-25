@@ -1,8 +1,8 @@
 # P1 — База данных, API и инфраструктура
 
 > Памятка для бэкендера, который отвечает за БД, API, очередь, авторизацию и деплой.
-> Подробное ТЗ: [backend/backend/SPEC.md](../../backend/backend/SPEC.md) · [backend/auth/SPEC.md](../../backend/auth/SPEC.md) ·
-> [backend/SPEC.md](../../backend/SPEC.md) · общая картина: [ARCHITECTURE.md](../../ARCHITECTURE.md) §4.
+> Подробное ТЗ: [core/SPEC.md](../../core/SPEC.md) · [auth/SPEC.md](../../auth/SPEC.md) ·
+> [BACKEND.md](../../BACKEND.md) · общая картина: [ARCHITECTURE.md](../../ARCHITECTURE.md) §4.
 
 ---
 
@@ -14,11 +14,11 @@
 | Отвечаешь за | Папка |
 |---|---|
 | Корень uv workspace, `docker-compose.yml`, `Caddyfile`, `.env.example`, CI | корень репо `backend` |
-| Схема БД, модели SQLAlchemy, миграции Alembic | `backend/backend/src/leadradar_core/db`, `modules/*/models.py`, `migrations/` |
-| REST API и SSE для фронта, снимок `openapi.json` | `backend/backend/src/leadradar_core/modules/*/router.py` |
-| Очередь Taskiq и worker, который запускает граф P3 | `backend/backend/src/leadradar_core/worker/` |
-| Адаптеры портов AI: сохранение документов, сигналов, скоров, прогресс | `backend/backend/src/leadradar_core/adapters/` |
-| Вход, JWT, роли `admin` / `sales` | `backend/auth/` |
+| Схема БД, модели SQLAlchemy, миграции Alembic | `core/src/leadradar_core/db`, `modules/*/models.py`, `migrations/` |
+| REST API и SSE для фронта, снимок `openapi.json` | `core/src/leadradar_core/modules/*/router.py` |
+| Очередь Taskiq и worker, который запускает граф P3 | `core/src/leadradar_core/worker/` |
+| Адаптеры портов AI: сохранение документов, сигналов, скоров, прогресс | `core/src/leadradar_core/adapters/` |
+| Вход, JWT, роли `admin` / `sales` | `auth/` |
 | Сиды: пресеты, демо-компании, пользователи | `lr seed` |
 | Сервер за Cloudflare, резервный дамп БД | compose + cloudflared |
 
@@ -29,13 +29,13 @@
 
 ## 2. Первые 2 часа (M0)
 
-1. Корневой `pyproject.toml`: workspace-members `parser`, `backend/ai`, `backend/auth`, `backend/backend`; ruff, pytest,
-   import-linter (контракты — [backend/SPEC.md](../../backend/SPEC.md) §1.5).
+1. Корневой `pyproject.toml`: workspace-members `parser`, `ai`, `auth`, `core`; ruff, pytest,
+   import-linter (контракты — [BACKEND.md](../../BACKEND.md) §1.5).
 2. `docker-compose.yml` с `postgres` (`pgvector/pgvector:pg16`) и `redis:7-alpine` + healthchecks.
 3. Скелет `leadradar-core`: `create_app()`, `settings.py`, `/health`, `/health/ready`, structlog.
 4. CI: ruff + pytest + lint-imports.
 5. Корневой `CLAUDE.md` (≤ 20 строк): команды, ссылки на ARCHITECTURE и SPEC, правило «тесты без сети».
-6. Договориться с P3 о портах (`Collector`, `AnalysisStore`, `ProgressSink`) — [backend/ai/SPEC.md](../../backend/ai/SPEC.md) §1.4.3.
+6. Договориться с P3 о портах (`Collector`, `AnalysisStore`, `ProgressSink`) — [ai/SPEC.md](../../ai/SPEC.md) §1.4.3.
 
 ---
 
@@ -56,7 +56,7 @@ Postgres 16 + pgvector. Три схемы: `core` (ты), `auth` (пакет aut
 | 6 | `signal`, `rejected_evidence`, `lead_score` | результаты AI |
 | 7 | `feedback`, `llm_call`, `llm_cache`, `domain_event` | качество, квоты, outbox |
 
-Поля и индексы — [backend/backend/SPEC.md](../../backend/backend/SPEC.md) §1.4.3. Главные правила:
+Поля и индексы — [core/SPEC.md](../../core/SPEC.md) §1.4.3. Главные правила:
 
 - У всех таблиц `core` есть `id uuid`, `org_id`, `created_at`, `updated_at`.
 - `company`: уникальность `(org_id, domain)`. Домен всегда нормализован: без схемы, `www.` и пути, в нижнем регистре.
@@ -108,7 +108,7 @@ Postgres 16 + pgvector. Три схемы: `core` (ты), `auth` (пакет aut
 ## 6. Авторизация (≈ 3 ч в окне H2–H8)
 
 PyJWT + `pwdlib[argon2]`; cookie `lr_session` (`HttpOnly; Secure; SameSite=Lax`); dummy-hash против timing-атак;
-роли `admin` / `sales`; `require_roles("admin")` на запись настроек. Детали — [backend/auth/SPEC.md](../../backend/auth/SPEC.md).
+роли `admin` / `sales`; `require_roles("admin")` на запись настроек. Детали — [auth/SPEC.md](../../auth/SPEC.md).
 
 ---
 
@@ -161,7 +161,7 @@ PyJWT + `pwdlib[argon2]`; cookie `lr_session` (`HttpOnly; Secure; SameSite=Lax`)
 ## 11. Промпт для Claude Code
 
 ```text
-Контекст: @ARCHITECTURE.md §4.6–4.7, @backend/backend/SPEC.md §1.4.3.
+Контекст: @ARCHITECTURE.md §4.6–4.7, @core/SPEC.md §1.4.3.
 Задача: CO-02 — модели SQLAlchemy и миграция Alembic для таблиц шага 4 (document, document_chunk, extraction_state).
 Вне рамок: API, адаптеры. Проверка: `alembic upgrade head` на пустой БД и `uv run pytest -k models`. Сначала план.
 ```
