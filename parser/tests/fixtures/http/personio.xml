@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workzag-jobs>
+  <position>
+    <id>42</id>
+    <office>Munich</office>
+    <department>IT</department>
+    <name>SOC Analyst (m/w/d)</name>
+    <employmentType>permanent</employmentType>
+    <createdAt>2026-09-15T09:30:00+02:00</createdAt>
+    <jobDescriptions>
+      <jobDescription>
+        <name>Your tasks</name>
+        <value><![CDATA[<p>Monitor our <strong>SIEM</strong> (Microsoft Sentinel).</p>]]></value>
+      </jobDescription>
+      <jobDescription>
+        <name>Your profile</name>
+        <value><![CDATA[<ul><li>ISO 27001 experience</li></ul>]]></value>
+      </jobDescription>
+    </jobDescriptions>
+  </position>
+</workzag-jobs>
