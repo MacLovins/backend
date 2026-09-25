@@ -3,6 +3,7 @@ name: leadradar-backend
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: leadradar-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-leadradar}
@@ -20,6 +21,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: leadradar-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:

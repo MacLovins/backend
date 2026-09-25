@@ -7,36 +7,80 @@ requires-python = ">=3.12,<3.14"
 package = false
 
 [tool.uv.workspace]
-members = ["parser", "ai"]
+members = ["parser", "ai", "auth", "core"]
 
 [dependency-groups]
 dev = [
-  "pytest>=8.4",
-  "pytest-asyncio>=1.2",
-  "respx>=0.22",
-  "ruff>=0.13",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.9.0",
+    "import-linter>=2.1",
+    "httpx>=0.28.0",
+    "respx>=0.22.0",
 ]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
 asyncio_mode = "auto"
-markers = ["live: tests that access public network services"]
-testpaths = ["parser/tests", "ai/tests"]
+markers = [
+    "live: tests that access public network services",
+]
+testpaths = [
+    "core/tests",
+    "auth/tests",
+    "ai/tests",
+    "parser/tests",
+]
 
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "core/migrations",
+    "*.md",
+    "**/*.md",
+]
 
 [tool.ruff.format]
-# SPEC.md files are owned per folder; keep ruff to Python sources.
 exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
-# × and − are used on purpose in formulas (docstrings, CLI output)
+ignore = ["E501"]
 allowed-confusables = ["×", "−"]
 
 [tool.ruff.lint.per-file-ignores]
 # the quote verifier normalizes exactly these typographic characters, and its tests use them
 "ai/src/leadradar_ai/verification/quotes.py" = ["RUF001"]
 "ai/tests/test_verification.py" = ["RUF001"]
+
+[tool.importlinter]
+root_packages = ["leadradar_parser", "leadradar_ai", "leadradar_auth", "leadradar_core"]
+
+[[tool.importlinter.contracts]]
+name = "Libraries never import the app"
+type = "forbidden"
+source_modules = ["leadradar_parser", "leadradar_ai", "leadradar_auth"]
+forbidden_modules = ["leadradar_core"]
+
+[[tool.importlinter.contracts]]
+name = "Libraries are independent of each other"
+type = "independence"
+modules = ["leadradar_parser", "leadradar_ai", "leadradar_auth"]
+
+[[tool.importlinter.contracts]]
+name = "Core uses only public APIs of libraries"
+type = "forbidden"
+source_modules = ["leadradar_core"]
+forbidden_modules = [
+    "leadradar_ai.pipeline",
+    "leadradar_ai.llm",
+    "leadradar_ai.retrieval",
+    "leadradar_parser.adapters",
+    "leadradar_parser.http",
+    "leadradar_auth.security",
+]
+allow_indirect_imports = true
