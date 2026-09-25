@@ -1,0 +1,67 @@
+"""Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
+
+Graph, scoring, LLM helpers, presets and evals are added here as they are implemented.
+"""
+
+from leadradar_ai.contracts import (
+    AnalysisDocument,
+    AnalysisInput,
+    ChunkIn,
+    CollectRequest,
+    CompanyProfile,
+    Contribution,
+    Criterion,
+    ICPConfig,
+    LeadScore,
+    LLMCallRecord,
+    ProgressEvent,
+    QuestionConfig,
+    Reason,
+    RejectedEvidence,
+    RuleConfig,
+    RunStats,
+    ScoreChange,
+    ScoringProfile,
+    ServiceBundle,
+    Snippet,
+    StepError,
+    StoredSignal,
+    VerifiedSignal,
+)
+from leadradar_ai.errors import ExtractionFailed, LeadRadarAIError, QuotaExhausted
+from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
+
+__all__ = [
+    "AnalysisDocument",
+    "AnalysisInput",
+    "AnalysisStore",
+    "ChunkIn",
+    "CollectRequest",
+    "Collector",
+    "CompanyProfile",
+    "Contribution",
+    "Criterion",
+    "Embedder",
+    "ExtractionFailed",
+    "ICPConfig",
+    "LLMCache",
+    "LLMCallRecord",
+    "LeadRadarAIError",
+    "LeadScore",
+    "ProgressEvent",
+    "ProgressSink",
+    "QuestionConfig",
+    "QuotaExhausted",
+    "Reason",
+    "RejectedEvidence",
+    "RuleConfig",
+    "RunStats",
+    "ScoreChange",
+    "ScoringProfile",
+    "ServiceBundle",
+    "Snippet",
+    "StepError",
+    "StoredSignal",
+    "UsageSink",
+    "VerifiedSignal",
+]
