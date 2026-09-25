@@ -1,6 +1,6 @@
 """Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
 
-Config helpers (expand_question, …), presets and evals are added here as they are implemented.
+Config helpers (expand_question, …) and evals are added here as they are implemented.
 """
 
 from leadradar_ai.contracts import (
@@ -47,11 +47,13 @@ from leadradar_ai.pipeline import (
     thread_config,
 )
 from leadradar_ai.ports import AnalysisStore, Collector, Embedder, LLMCache, ProgressSink, UsageSink
+from leadradar_ai.presets import SIGNAL_CATEGORIES, Preset, list_presets, load_preset
 from leadradar_ai.retrieval import FastEmbedder
 from leadradar_ai.scoring import evaluate_rules, fit_score, lead_sort_key, score_company
 from leadradar_ai.settings import AISettings, LLMSettings
 
 __all__ = [
+    "SIGNAL_CATEGORIES",
     "AISettings",
     "AnalysisDeps",
     "AnalysisDocument",
@@ -82,6 +84,7 @@ __all__ = [
     "LLMUnavailable",
     "LeadRadarAIError",
     "LeadScore",
+    "Preset",
     "ProgressEvent",
     "ProgressSink",
     "QuestionConfig",
@@ -102,6 +105,8 @@ __all__ = [
     "evaluate_rules",
     "fit_score",
     "lead_sort_key",
+    "list_presets",
+    "load_preset",
     "run_analysis",
     "score_company",
     "thread_config",
