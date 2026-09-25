@@ -1,0 +1,27 @@
+- {id: logistics, label: "Logistics & Transport", wikidata: [Q177777, Q651658, Q7590], nace: [H49, H52], nis2: annex_i, dora: false}
+- {id: airlines, label: "Airlines", wikidata: [Q46970], nace: [H51], nis2: annex_i, dora: false}
+- {id: rail, label: "Rail Transport", wikidata: [Q3565868, Q249556], nace: [H49.1, H49.2], nis2: annex_i, dora: false}
+- {id: postal_courier, label: "Postal & Courier", wikidata: [Q1529128, Q848466], nace: [H53], nis2: annex_i, dora: false}
+- {id: automotive, label: "Automotive", wikidata: [Q190117], nace: [C29], nis2: null, dora: false}
+- {id: manufacturing, label: "Manufacturing", wikidata: [Q187939], nace: [C], nis2: annex_ii, dora: false}
+- {id: chemicals, label: "Chemicals", wikidata: [Q207652], nace: [C20], nis2: annex_ii, dora: false}
+- {id: pharma, label: "Pharmaceuticals", wikidata: [Q507443], nace: [C21], nis2: annex_ii, dora: false}
+- {id: medical_devices, label: "Medical Devices", wikidata: [Q63383285, Q1519843], nace: [C32.5], nis2: annex_ii, dora: false}
+- {id: healthcare, label: "Healthcare", wikidata: [Q31207, Q15067276], nace: [Q86], nis2: annex_i, dora: false}
+- {id: banking, label: "Banking", wikidata: [Q22687, Q837171], nace: [K64.1], nis2: annex_i, dora: true}
+- {id: insurance, label: "Insurance", wikidata: [Q43183, Q2518196], nace: [K65], nis2: null, dora: true}
+- {id: financial_markets, label: "Financial Markets", wikidata: [Q179076, Q11691], nace: [K66.1], nis2: annex_i, dora: true}
+- {id: telecom, label: "Telecommunications", wikidata: [Q418, Q2401742], nace: [J61], nis2: annex_i, dora: false}
+- {id: energy_utilities, label: "Energy & Utilities", wikidata: [Q2151621, Q2316331, Q1326624], nace: [D35], nis2: annex_i, dora: false}
+- {id: oil_gas, label: "Oil & Gas", wikidata: [Q862571], nace: [B06], nis2: annex_i, dora: false}
+- {id: water, label: "Water", wikidata: [Q474883, Q1061108], nace: [E36], nis2: annex_i, dora: false}
+- {id: retail, label: "Retail", wikidata: [Q126793], nace: [G47], nis2: null, dora: false}
+- {id: consumer_goods, label: "Consumer Goods", wikidata: [Q56573357, Q1187656], nace: [C31, C32], nis2: null, dora: false}
+- {id: food_beverage, label: "Food & Beverage", wikidata: [Q540912, Q4899370], nace: [C10, C11], nis2: annex_ii, dora: false}
+- {id: public_sector, label: "Public Sector", wikidata: [Q294217], nace: [O84], nis2: annex_i, dora: false}
+- {id: digital_infrastructure, label: "Digital Infrastructure", wikidata: [Q671224, Q483639, Q11371], nace: [J61, J63.1], nis2: annex_i, dora: false}
+- {id: it_services, label: "IT Services", wikidata: [Q11661, Q1540863], nace: [J62], nis2: annex_ii, dora: false}
+- {id: software, label: "Software", wikidata: [Q7397, Q880371], nace: [J62.01], nis2: annex_ii, dora: false}
+- {id: media, label: "Media", wikidata: [Q11033, Q56611639], nace: [J58, J59, J60], nis2: null, dora: false}
+- {id: construction, label: "Construction", wikidata: [Q385378, Q13405640], nace: [F], nis2: null, dora: false}
+- {id: real_estate, label: "Real Estate", wikidata: [Q1660132], nace: [L68], nis2: null, dora: false}

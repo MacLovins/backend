@@ -1,0 +1,31 @@
+[project]
+name = "leadradar-backend-workspace"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["parser"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4",
+  "pytest-asyncio>=1.2",
+  "respx>=0.22",
+  "ruff>=0.13",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = ["live: tests that access public network services"]
+testpaths = ["parser/tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]

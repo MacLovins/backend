@@ -1,0 +1,14 @@
+{"head": {"vars": ["item", "itemLabel", "countryCode", "hqLabel", "employees", "revenue", "founded", "lei", "cbId", "ceoLabel", "industries"]},
+ "results": {"bindings": [{
+  "item": {"type": "uri", "value": "http://www.wikidata.org/entity/Q157645"},
+  "itemLabel": {"type": "literal", "value": "DHL Group"},
+  "countryCode": {"type": "literal", "value": "DE"},
+  "hqLabel": {"type": "literal", "value": "Bonn"},
+  "employees": {"type": "literal", "value": "594879"},
+  "revenue": {"type": "literal", "value": "8.1758E10"},
+  "founded": {"type": "literal", "value": "1995-01-01T00:00:00Z"},
+  "lei": {"type": "literal", "value": "529900PHEJFM2VNSTN51"},
+  "cbId": {"type": "literal", "value": "deutsche-post-dhl"},
+  "ceoLabel": {"type": "literal", "value": "Tobias Meyer"},
+  "industries": {"type": "literal", "value": "http://www.wikidata.org/entity/Q177777|http://www.wikidata.org/entity/Q1"}
+ }]}}

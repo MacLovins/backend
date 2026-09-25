@@ -1,0 +1,7 @@
+# Page kinds for the website adapter (SPEC §1.7.3). Order matters: the first matching kind wins.
+# Tokens of 3 characters or fewer must equal a whole path segment (so "ir" does not match "directions").
+news: [newsroom, news, press, presse, media, pressemitteilungen, actualites, nieuws]
+strategy: [strategy, strategie, sustainability, nachhaltigkeit, transformation]
+ir: [investor, investors, ir, annual-report, geschaeftsbericht, reports]
+about: [about, about-us, ueber-uns, unternehmen, company, who-we-are]
+careers: [careers, career, karriere, jobs]
