@@ -1,0 +1,44 @@
+{
+ "data": {
+  "type": "lei-records",
+  "id": "529900EXAMPLEPARENT01",
+  "attributes": {
+   "lei": "529900EXAMPLEPARENT01",
+   "entity": {
+    "legalName": {
+     "name": "Example Aktiengesellschaft",
+     "language": "de"
+    },
+    "legalAddress": {
+     "city": "Bonn",
+     "region": "DE-NW",
+     "country": "DE",
+     "postalCode": "53113",
+     "addressLines": [
+      "Street 1"
+     ]
+    },
+    "headquartersAddress": {
+     "city": "Bonn",
+     "region": "DE-NW",
+     "country": "DE",
+     "postalCode": "53113",
+     "addressLines": [
+      "Street 1"
+     ]
+    },
+    "registeredAs": "HRB 6792",
+    "jurisdiction": "DE",
+    "legalForm": {
+     "id": "6QQB",
+     "other": null
+    },
+    "status": "ACTIVE"
+   },
+   "registration": {
+    "status": "ISSUED",
+    "lastUpdateDate": "2026-05-01T00:00:00Z"
+   }
+  }
+ }
+}

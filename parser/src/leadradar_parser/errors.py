@@ -22,3 +22,11 @@ class SourceRequestFailed(ParserError):
 
 class SourceTimeout(SourceRequestFailed):
     """A source did not answer within the request timeout."""
+
+
+class SourceTooLarge(SourceRequestFailed):
+    """A download exceeded its size limit."""
+
+
+class SourceDisabled(ParserError):
+    """The adapter is not configured (a credential is missing)."""

@@ -396,7 +396,7 @@ async def test_rsshub_requires_self_hosted_instance(
     rss = b"""<rss version="2.0"><channel><item><title>DHL signs cloud contract</title>
       <description>Major cloud migration.</description><link>https://rss.example/item1</link>
       <pubDate>Fri, 25 Sep 2026 09:00:00 GMT</pubDate></item></channel></rss>"""
-    respx.get(url__regex=r"^https://rsshub\.internal/google/news/.*").mock(
+    respx.get(url__regex=r"^https://rsshub\.internal/bing/search/.*").mock(
         return_value=httpx.Response(200, content=rss)
     )
     docs = await run(RSSHubAdapter(), make_company(name="DHL Group"), make_plan("news"), http)

@@ -165,7 +165,12 @@ PARSER_MAX_CONCURRENCY=8
 NEWSAPI_KEY=
 ADZUNA_APP_ID=
 ADZUNA_APP_KEY=
+PARSER_REPORTS_MAX_PDFS=3          # reports: PDF на компанию, ≤ 30 МБ каждый (PARSER_REPORTS_MAX_PDF_MB)
+RSSHUB_BASE_URL=                   # только свой инстанс RSSHub; RSSHUB_ROUTE=/bing/search/{query}
 ```
+
+Без ключей по умолчанию включены также `reports`, `hibp` (каталог утечек — 1 запрос в сутки на процесс) и `gleif`;
+`adzuna`, `newsapi`, `serpapi`, `rsshub`, `crunchbase` — только при заданных ключах / URL.
 
 ### 1.6 Структура папки
 

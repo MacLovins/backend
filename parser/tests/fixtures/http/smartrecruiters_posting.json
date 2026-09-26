@@ -1,0 +1,26 @@
+{
+ "id": "744000151900001",
+ "name": "RPA Automation Developer",
+ "postingUrl": "https://jobs.smartrecruiters.com/ExampleGroup/744000151900001-rpa-automation-developer",
+ "releasedDate": "2026-09-21T10:00:00.000Z",
+ "jobAd": {
+  "sections": {
+   "companyDescription": {
+    "title": "Company Description",
+    "text": "<p>We build machines.</p>"
+   },
+   "jobDescription": {
+    "title": "Job Description",
+    "text": "<ul><li>Build UiPath bots</li><li>Automate finance processes</li></ul>"
+   },
+   "qualifications": {
+    "title": "Qualifications",
+    "text": "<p>3 years of RPA experience</p>"
+   },
+   "additionalInformation": {
+    "title": "Additional Information",
+    "text": ""
+   }
+  }
+ }
+}

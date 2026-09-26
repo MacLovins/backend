@@ -6,7 +6,14 @@ import httpx
 from .adapters.base import SourceAdapter
 from .adapters.registry import ADAPTERS
 from .contracts import CollectPlan, CollectResult, Document, ResolvedCompany, SourceError
-from .errors import RobotsDenied, SourceBlocked, SourceRateLimited, SourceRequestFailed, SourceTimeout
+from .errors import (
+    RobotsDenied,
+    SourceBlocked,
+    SourceDisabled,
+    SourceRateLimited,
+    SourceRequestFailed,
+    SourceTimeout,
+)
 from .http import HttpClient, create_http_client
 from .normalize import deduplicate
 
@@ -98,6 +105,8 @@ def _source_error(adapter: str, exc: BaseException) -> SourceError:
         return SourceError(
             adapter=adapter, kind="rate_limited", message=str(exc), retry_after_s=exc.retry_after_s
         )
+    if isinstance(exc, SourceDisabled):
+        return SourceError(adapter=adapter, kind="disabled", message=str(exc))
     if isinstance(exc, SourceBlocked):
         return SourceError(adapter=adapter, kind="blocked", message=str(exc))
     if isinstance(exc, RobotsDenied):

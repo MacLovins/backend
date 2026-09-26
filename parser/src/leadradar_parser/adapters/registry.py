@@ -1,6 +1,8 @@
 from ..contracts import AdapterInfo
 from ..settings import ParserSettings
 from .base import SourceAdapter
+from .incident_hibp import HibpAdapter
+from .jobs_adzuna import AdzunaAdapter
 from .jobs_ats import JobsAtsAdapter
 from .jobs_careers_html import CareersHtmlAdapter
 from .news_gdelt import GdeltAdapter
@@ -9,8 +11,10 @@ from .news_newsapi import NewsApiAdapter
 from .news_rsshub import RSSHubAdapter
 from .news_serpapi import SerpApiAdapter
 from .registry_crunchbase import CrunchbaseAdapter
+from .registry_gleif import GleifAdapter
 from .registry_wikidata import WikidataAdapter
 from .web_playwright import PlaywrightAdapter
+from .web_reports import ReportsAdapter
 from .web_site import WebsiteAdapter
 
 ADAPTERS: dict[str, SourceAdapter] = {
@@ -23,10 +27,14 @@ ADAPTERS: dict[str, SourceAdapter] = {
         RSSHubAdapter(),
         WebsiteAdapter(),
         PlaywrightAdapter(),
+        ReportsAdapter(),
         JobsAtsAdapter(),
         CareersHtmlAdapter(),
+        AdzunaAdapter(),
         WikidataAdapter(),
+        GleifAdapter(),
         CrunchbaseAdapter(),
+        HibpAdapter(),
     )
 }
 

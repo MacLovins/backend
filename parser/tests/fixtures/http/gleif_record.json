@@ -1,0 +1,44 @@
+{
+ "data": {
+  "type": "lei-records",
+  "id": "529900EXAMPLE0000055",
+  "attributes": {
+   "lei": "529900EXAMPLE0000055",
+   "entity": {
+    "legalName": {
+     "name": "Example Logistics GmbH",
+     "language": "de"
+    },
+    "legalAddress": {
+     "city": "Cologne",
+     "region": "DE-NW",
+     "country": "DE",
+     "postalCode": "53113",
+     "addressLines": [
+      "Street 1"
+     ]
+    },
+    "headquartersAddress": {
+     "city": "Cologne",
+     "region": "DE-NW",
+     "country": "DE",
+     "postalCode": "53113",
+     "addressLines": [
+      "Street 1"
+     ]
+    },
+    "registeredAs": "HRB 6792",
+    "jurisdiction": "DE",
+    "legalForm": {
+     "id": "6QQB",
+     "other": null
+    },
+    "status": "ACTIVE"
+   },
+   "registration": {
+    "status": "ISSUED",
+    "lastUpdateDate": "2026-05-01T00:00:00Z"
+   }
+  }
+ }
+}

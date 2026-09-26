@@ -1,0 +1,44 @@
+{
+ "count": 3,
+ "mean": 60000,
+ "results": [
+  {
+   "id": "4711",
+   "title": "<strong>RPA</strong> Developer (m/w/d)",
+   "description": "Wir automatisieren Prozesse mit UiPath und <strong>RPA</strong> in der Finanzabteilung …",
+   "created": "2026-09-20T09:15:00Z",
+   "redirect_url": "https://www.adzuna.de/land/ad/4711?se=abc",
+   "company": {
+    "display_name": "Example AG"
+   },
+   "location": {
+    "display_name": "Bonn, Nordrhein-Westfalen",
+    "area": [
+     "Deutschland",
+     "Bonn"
+    ]
+   },
+   "category": {
+    "label": "IT-Stellen",
+    "tag": "it-jobs"
+   },
+   "contract_time": "full_time"
+  },
+  {
+   "id": "4712",
+   "title": "Automation Engineer",
+   "description": "Recruiting agency role for an unnamed client.",
+   "created": "2026-09-21T09:15:00Z",
+   "redirect_url": "https://www.adzuna.de/land/ad/4712",
+   "company": {
+    "display_name": "Personal Partner GmbH"
+   },
+   "location": {
+    "display_name": "Köln"
+   },
+   "category": {
+    "label": "IT-Stellen"
+   }
+  }
+ ]
+}

@@ -228,6 +228,8 @@ async def test_resolve_detects_ats_on_careers_page_and_fills_firmographics(http:
 async def test_resolve_survives_unreachable_homepage(http: HttpClient) -> None:
     respx.get(url__startswith="https://example.com/").mock(side_effect=httpx.ConnectError("down"))
     respx.get(API_URL).mock(return_value=httpx.Response(200, json={"search": []}))
+    gleif = respx.get("https://api.gleif.org/api/v1/lei-records").mock(return_value=httpx.Response(503))
     resolved = await resolve_company(CompanyRef(name="Example", domain="example.com"), http=http)
+    assert gleif.called and "gleif unavailable" in resolved.notes
     assert resolved.firmographics is None and resolved.ats is None
     assert {"homepage unavailable", "careers not found", "wikidata entity not found"} <= set(resolved.notes)
