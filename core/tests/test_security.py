@@ -47,17 +47,19 @@ def test_security_refuses_insecure_jwt_secret_outside_dev(secret: str) -> None:
         configure_security(AppSettings(ENV="demo"), AuthSettings(JWT_SECRET=secret))
 
 
-def test_security_cookie_secure_defaults() -> None:
-    prod_auth = AuthSettings(JWT_SECRET=REAL_SECRET)
-    configure_security(AppSettings(ENV="demo"), prod_auth)
+def test_security_cookie_secure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    # isolated from the developer's .env / environment (e.g. a local AUTH_COOKIE_SECURE=false)
+    monkeypatch.delenv("AUTH_COOKIE_SECURE", raising=False)
+    prod_auth = AuthSettings(_env_file=None, JWT_SECRET=REAL_SECRET)
+    configure_security(AppSettings(_env_file=None, ENV="demo"), prod_auth)
     assert prod_auth.COOKIE_SECURE is True
 
-    dev_auth = AuthSettings()
-    configure_security(AppSettings(ENV="dev"), dev_auth)  # the dev secret is fine in dev
+    dev_auth = AuthSettings(_env_file=None)
+    configure_security(AppSettings(_env_file=None, ENV="dev"), dev_auth)  # the dev secret is fine in dev
     assert dev_auth.COOKIE_SECURE is False
 
-    explicit = AuthSettings(JWT_SECRET=REAL_SECRET, COOKIE_SECURE=False)
-    configure_security(AppSettings(ENV="demo"), explicit)
+    explicit = AuthSettings(_env_file=None, JWT_SECRET=REAL_SECRET, COOKIE_SECURE=False)
+    configure_security(AppSettings(_env_file=None, ENV="demo"), explicit)
     assert explicit.COOKIE_SECURE is False
 
 
