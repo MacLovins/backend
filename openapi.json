@@ -4263,6 +4263,16 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/RuleTrigger"
+          },
+          "email_frequency": {
+            "type": "string",
+            "enum": [
+              "instant",
+              "twice_daily",
+              "daily"
+            ],
+            "title": "Email Frequency",
+            "default": "instant"
           }
         },
         "additionalProperties": false,
@@ -4309,6 +4319,16 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/RuleTrigger"
+          },
+          "email_frequency": {
+            "type": "string",
+            "enum": [
+              "instant",
+              "twice_daily",
+              "daily"
+            ],
+            "title": "Email Frequency",
+            "default": "instant"
           },
           "created_at": {
             "type": "string",
@@ -4399,6 +4419,22 @@
                 "type": "null"
               }
             ]
+          },
+          "email_frequency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "instant",
+                  "twice_daily",
+                  "daily"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Frequency"
           }
         },
         "additionalProperties": false,
@@ -7047,6 +7083,33 @@
             ],
             "title": "Trend Kind"
           },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weak",
+                  "moderate",
+                  "strong"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
           "title": {
             "type": "string",
             "title": "Title"
@@ -7148,6 +7211,33 @@
               }
             ],
             "title": "Trend Kind"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weak",
+                  "moderate",
+                  "strong"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
           },
           "title": {
             "type": "string",
@@ -7733,6 +7823,58 @@
               }
             ],
             "title": "Service Ids"
+          },
+          "countries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countries"
+          },
+          "industries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industries"
+          },
+          "employees_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees Min"
+          },
+          "employees_max": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees Max"
           }
         },
         "additionalProperties": false,
@@ -7805,6 +7947,43 @@
               }
             ],
             "title": "Min Strength"
+          },
+          "levels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "weak",
+                    "moderate",
+                    "strong"
+                  ]
+                },
+                "propertyNames": {
+                  "enum": [
+                    "cost_efficiency",
+                    "digital_transformation",
+                    "ai_automation",
+                    "hiring",
+                    "leadership_change",
+                    "shared_services",
+                    "tech_stack",
+                    "tech_partners",
+                    "incident",
+                    "compliance",
+                    "investment",
+                    "expansion",
+                    "internal_capability",
+                    "distress"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Levels"
           },
           "tier_to": {
             "anyOf": [

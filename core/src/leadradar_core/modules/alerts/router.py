@@ -90,7 +90,8 @@ async def update_alert_rule(
     rule = await _own_rule(session, principal, rule_id)
     changes = body.model_dump(exclude_unset=True, mode="json")
     for field, value in changes.items():
-        setattr(rule, field, value)
+        if value is not None:  # every field of a rule is required: an explicit null keeps the stored value
+            setattr(rule, field, value)
     await session.commit()
     await session.refresh(rule)
     return AlertRuleOut.model_validate(rule)

@@ -8,6 +8,9 @@ from their `schedule` labels and executed by the worker:
 - dispatch_events  (APP_DISPATCH_EVENTS_CRON, every minute): the outbox dispatcher.
 - evaluate_jobs_thresholds (APP_JOBS_ALERTS_CRON, hourly): alert rules of kind jobs_threshold ("100+ job
   postings in a day"); a (rule, company) is notified once per window.
+- send_email_digests (APP_ALERTS_DIGEST_CRON, 07:00 and 15:00 UTC): queued e-mails of alert rules with
+  email_frequency twice_daily (every run) or daily (the run at APP_ALERTS_DAILY_DIGEST_HOUR), one e-mail per
+  user.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -236,6 +239,21 @@ async def evaluate_jobs_thresholds(now: datetime | None = None, only_org: UUID |
     return len(created)
 
 
+# --- send_email_digests ------------------------------------------------------------------------
+
+
+async def send_email_digests(now: datetime | None = None, only_org: UUID | None = None) -> int:
+    """One pass over the queued alert e-mails; returns the number of digest e-mails sent."""
+    from leadradar_core.integrations.alert_rules import mailer_for
+
+    sent = await alerts_service.send_email_digests(
+        async_session_factory, settings.PUBLIC_ORIGIN, mailer_for(settings), now=now, only_org=only_org
+    )
+    if sent:
+        log.info("email_digests_sent", emails=sent)
+    return sent
+
+
 # --- task registration -------------------------------------------------------------------------
 
 
@@ -273,3 +291,12 @@ async def dispatch_events() -> int:
 )
 async def evaluate_jobs_thresholds_task() -> int:
     return await evaluate_jobs_thresholds()
+
+
+@broker.task(
+    task_name="send_email_digests",
+    retry_on_error=False,
+    schedule=[{"cron": settings.ALERTS_DIGEST_CRON, "schedule_id": "send_email_digests"}],
+)
+async def send_email_digests_task() -> int:
+    return await send_email_digests()

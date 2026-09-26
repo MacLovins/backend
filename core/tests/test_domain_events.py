@@ -260,6 +260,7 @@ async def test_scheduler_labels_register_the_periodic_tasks():
         "resume_paused": settings.RESUME_PAUSED_CRON,
         "dispatch_events": settings.DISPATCH_EVENTS_CRON,
         "evaluate_jobs_thresholds": settings.JOBS_ALERTS_CRON,
+        "send_email_digests": settings.ALERTS_DIGEST_CRON,
     }
 
 

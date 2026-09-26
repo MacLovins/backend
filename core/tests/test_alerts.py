@@ -1,15 +1,17 @@
 """Trends on leads, activity filters, alert rules (CRUD, preview, matching, delivery), notifications,
-company watch, the leads summary and the jobs-threshold task. Real database, fake SMTP, no network.
+company watch, the leads summary, the jobs-threshold task and the e-mail digests. Real database, fake SMTP,
+no network.
 
 Every test uses its own org id (and user ids) so it does not interfere with others on the shared database.
 """
 
 from collections.abc import AsyncIterator
-from datetime import datetime, timedelta
-from typing import ClassVar
+from datetime import UTC, datetime, timedelta
+from typing import ClassVar, get_args
 from uuid import UUID, uuid4
 
 import httpx
+import leadradar_ai as ai
 import pytest
 from _lead_fixtures import NOW, ensure_service, headers, seed_lead
 from leadradar_auth import UserAccount
@@ -18,6 +20,7 @@ from leadradar_core.integrations import alert_rules, alerts
 from leadradar_core.main import create_app
 from leadradar_core.modules.activity import events
 from leadradar_core.modules.activity.dispatcher import Event, dispatch_pending
+from leadradar_core.modules.alerts import schemas as alert_schemas
 from leadradar_core.modules.alerts import service as alerts_service
 from leadradar_core.modules.alerts.models import AlertRule, Notification
 from leadradar_core.modules.intelligence.models import Document
@@ -326,11 +329,13 @@ async def test_rule_crud_is_user_scoped(org_id, user_id, client):
         "categories": ["hiring"],
         "polarity": None,
         "min_strength": "moderate",
+        "levels": None,
         "tier_to": None,
         "jobs_min": None,
         "jobs_window_h": None,
     }
     assert rule_out["scope"]["company_ids"] == body["scope"]["company_ids"]
+    assert rule_out["email_frequency"] == "instant"
 
     listed = (await client.get("/api/v1/alerts/rules", headers=h)).json()
     assert [r["id"] for r in listed] == [rule_out["id"]]
@@ -398,6 +403,86 @@ async def test_rule_rejects_empty_channels_and_unknown_fields(org_id, user_id, c
     assert ok.status_code == 201 and ok.json()["trigger"]["jobs_window_h"] == 24  # default window: a day
 
 
+async def test_rule_crud_round_trips_scope_levels_and_email_frequency(org_id, user_id, client):
+    h = headers(org_id, "sales", user_id)
+    body = {
+        "name": "Hot hiring in DACH enterprises",
+        "channels": ["inapp", "email"],
+        "email_frequency": "twice_daily",
+        "scope": {
+            "countries": ["de", "AT", "DE"],
+            "industries": ["logistics"],
+            "employees_min": 1000,
+            "employees_max": 50000,
+        },
+        "trigger": {"kind": "signal", "levels": {"hiring": "strong", "incident": "moderate"}},
+    }
+    created = await client.post("/api/v1/alerts/rules", json=body, headers=h)
+    assert created.status_code == 201, created.text
+    out = created.json()
+    assert out["email_frequency"] == "twice_daily"
+    assert out["scope"] == {
+        "company_ids": None,
+        "service_ids": None,
+        "countries": ["DE", "AT"],  # upper case, no duplicates
+        "industries": ["logistics"],
+        "employees_min": 1000,
+        "employees_max": 50000,
+    }
+    assert out["trigger"]["levels"] == {"hiring": "strong", "incident": "moderate"}
+    [listed] = (await client.get("/api/v1/alerts/rules", headers=h)).json()
+    assert (listed["scope"], listed["trigger"], listed["email_frequency"]) == (
+        out["scope"],
+        out["trigger"],
+        "twice_daily",
+    )
+
+    url = f"/api/v1/alerts/rules/{out['id']}"
+    patched = await client.patch(
+        url, json={"email_frequency": "daily", "scope": {"countries": ["FR"]}}, headers=h
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["email_frequency"] == "daily" and patched.json()["scope"]["countries"] == ["FR"]
+    assert patched.json()["scope"]["employees_min"] is None  # a scope is replaced as a whole
+    kept = await client.patch(url, json={"email_frequency": None, "name": "Renamed"}, headers=h)
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["email_frequency"] == "daily" and kept.json()["name"] == "Renamed"  # null: unchanged
+    assert (await client.patch(url, json={"email_frequency": "hourly"}, headers=h)).status_code == 422
+
+    empty = await client.post(
+        "/api/v1/alerts/rules", json={"name": "e", "trigger": {"kind": "signal", "levels": {}}}, headers=h
+    )
+    assert empty.status_code == 201 and empty.json()["trigger"]["levels"] is None  # no per-category levels
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"trigger": {"kind": "tier", "levels": {"hiring": "strong"}}},
+        {"trigger": {"kind": "jobs_threshold", "jobs_min": 5, "levels": {"hiring": "weak"}}},
+        {"trigger": {"kind": "signal", "levels": {"astrology": "weak"}}},
+        {"trigger": {"kind": "signal", "levels": {"hiring": "hot"}}},
+        {"scope": {"employees_min": 5000, "employees_max": 100}},
+        {"scope": {"employees_min": -1}},
+        {"scope": {"countries": ["DEU"]}},
+        {"scope": {"countries": ["D1"]}},
+        {"scope": {"regions": ["EU"]}},
+        {"email_frequency": "hourly"},
+    ],
+)
+async def test_rule_scope_levels_and_frequency_validation(org_id, user_id, client, body):
+    h = headers(org_id, "sales", user_id)
+    rule_in = {"name": "x", "trigger": {"kind": "signal"}, **body}
+    res = await client.post("/api/v1/alerts/rules", json=rule_in, headers=h)
+    assert res.status_code == 422, res.text
+    assert res.json()["error"]["code"] == "validation_error"
+    assert (await client.post("/api/v1/alerts/rules/preview", json=rule_in, headers=h)).status_code == 422
+
+
+def test_signal_categories_match_the_ai_presets():
+    assert list(get_args(alert_schemas.SignalCategory)) == list(ai.SIGNAL_CATEGORIES)
+
+
 # --- matching ----------------------------------------------------------------------------------
 
 
@@ -462,6 +547,72 @@ def test_match_scope_and_signal_trigger():
     assert '"We are hiring RPA developers in Bonn" — greenhouse' in draft.body
     assert "Why it matters: hiring for these roles" in draft.body
     assert draft.url == f"https://radar.test/companies/{company}?service={service}"
+
+
+def test_match_firmographic_scope():
+    org, user, company, service = uuid4(), uuid4(), uuid4(), uuid4()
+    ev = signal_event(org, company, service)
+    dhl = alerts_service.Firmographics("DE", ("logistics", "postal_courier"), 20000)
+    unknown = alerts_service.Firmographics(None, (), None)
+
+    def fires(scope, firmo=dhl):
+        return (
+            alerts_service.match_event(rule(org, user, scope=scope), ev, "https://radar.test", firmo)
+            is not None
+        )
+
+    assert fires({"countries": ["AT", "DE"]}) and not fires({"countries": ["FR"]})
+    assert fires({"industries": ["banking", "logistics"]}) and not fires({"industries": ["banking"]})
+    assert fires({"employees_min": 20000, "employees_max": 20000})  # bounds are inclusive
+    assert not fires({"employees_min": 20001}) and not fires({"employees_max": 19999})
+    assert fires({"countries": ["DE"], "industries": ["logistics"], "employees_min": 1000})
+    assert not fires({"countries": ["DE"], "industries": ["logistics"], "employees_max": 1000})
+    assert fires({"countries": [], "industries": [], "employees_min": None})  # empty = any
+    # unknown data never matches a limit
+    assert not fires({"countries": ["DE"]}, unknown) and not fires({"industries": ["logistics"]}, unknown)
+    assert not fires({"employees_min": 1}, unknown) and not fires({"employees_max": 10**6}, unknown)
+    assert fires({"company_ids": [str(company)]}, None)  # no firmographic limit: no company needed
+    assert not fires({"countries": ["DE"]}, None)  # the company was not found
+
+
+def test_match_levels_per_signal_category():
+    org, user, company, service = uuid4(), uuid4(), uuid4(), uuid4()
+    origin = "https://radar.test"
+
+    def fires(r, **payload):
+        return (
+            alerts_service.match_event(r, signal_event(org, company, service, **payload), origin) is not None
+        )
+
+    levels = rule(
+        org, user, trigger={"kind": "signal", "levels": {"hiring": "moderate", "incident": "strong"}}
+    )
+    assert fires(levels, strength="strong") and fires(levels, strength="moderate")  # at or above the level
+    assert not fires(levels, strength="weak")  # below the level
+    assert fires(levels, category="incident", strength="strong")
+    assert not fires(levels, category="incident", strength="moderate")
+    assert not fires(levels, category="cost_efficiency", strength="strong")  # category not listed
+    assert not fires(levels, category=None)
+
+    # AND with the trend kinds, the polarity and the global minimum strength
+    layoffs = rule(
+        org, user, trigger={"kind": "signal", "categories": ["layoffs"], "levels": {"distress": "weak"}}
+    )
+    assert fires(layoffs, category="distress", summary="Announces job cuts", strength="weak")
+    assert not fires(layoffs, category="distress", summary="Hiring freeze", strength="strong")
+    both = rule(org, user, trigger={"kind": "signal", "min_strength": "strong", "levels": {"hiring": "weak"}})
+    assert fires(both, strength="strong") and not fires(both, strength="moderate")
+    negative = rule(
+        org, user, trigger={"kind": "signal", "polarity": "negative", "levels": {"hiring": "weak"}}
+    )
+    assert not fires(negative) and fires(negative, polarity="negative")
+
+    draft = alerts_service.match_event(levels, signal_event(org, company, service), origin)
+    assert (draft.category, draft.strength) == ("hiring", "strong")
+    tier = alerts_service.match_event(
+        rule(org, user, trigger={"kind": "tier"}), tier_event(org, company, service), origin
+    )
+    assert (tier.category, tier.strength) == (None, None)
 
 
 def test_match_tier_trigger():
@@ -600,6 +751,63 @@ async def test_consumer_runs_through_the_outbox_dispatcher(org_id, user_id):
     assert len(await user_notifications(user_id)) == 1
 
 
+async def test_consumer_scopes_by_firmographics_and_loads_the_company_only_when_needed(org_id, user_id):
+    big = await seed_lead(org_id)  # DE, logistics, 20 000 employees
+    unknown_size = await seed_lead(org_id, service_id=big.service_id, name="Tiny Co", employees=None)
+    names: dict[UUID, str] = {}
+
+    async def add(name: str, scope: dict | None = None) -> None:
+        async with async_session_factory() as session, session.begin():
+            r = rule(org_id, user_id, name=name, scope=scope or {})
+            names[r.id] = name
+            session.add(r)
+
+    await add("any")
+    consumer = alert_rules.AlertRulesConsumer(app_settings())
+    with count_queries() as plain:
+        await consumer.handle(signal_event(org_id, big.company_id, big.service_id))
+    assert not [q for q in plain if "FROM core.company" in q]  # no firmographic scope: no company lookup
+
+    await add("DACH enterprises", {"countries": ["DE", "AT", "CH"], "employees_min": 1000})
+    await add("France", {"countries": ["FR"]})
+    await add("banks", {"industries": ["banking"]})
+    with count_queries() as scoped:
+        await consumer.handle(signal_event(org_id, big.company_id, big.service_id))
+        await consumer.handle(signal_event(org_id, unknown_size.company_id, unknown_size.service_id))
+    assert len([q for q in scoped if "FROM core.company" in q]) == 2  # one lookup per event
+
+    fired = [(n.company_id, names[n.rule_id]) for n in await user_notifications(user_id)]
+    assert sorted(fired[1:]) == sorted(
+        [
+            (big.company_id, "any"),
+            (big.company_id, "DACH enterprises"),
+            (unknown_size.company_id, "any"),  # an unknown size is outside a size-limited scope
+        ]
+    )
+
+
+async def test_email_frequency_queues_digest_mails_instead_of_sending(org_id, user_id, fake_smtp):
+    seeded = await seed_lead(org_id)
+    await create_user(org_id, user_id)
+    async with async_session_factory() as session, session.begin():
+        session.add_all(
+            [
+                rule(org_id, user_id, name="instant", channels=["inapp", "email"]),
+                rule(
+                    org_id, user_id, name="twice", channels=["inapp", "email"], email_frequency="twice_daily"
+                ),
+                rule(org_id, user_id, name="daily", channels=["email"], email_frequency="daily"),
+                rule(org_id, user_id, name="in-app", channels=["inapp"], email_frequency="daily"),
+            ]
+        )
+    s = app_settings(SMTP_HOST="smtp.test", SMTP_FROM="radar@x.io")
+    await alert_rules.AlertRulesConsumer(s).handle(signal_event(org_id, seeded.company_id, seeded.service_id))
+    mine = await user_notifications(user_id)
+    assert sorted(n.delivered.get("email", "-") for n in mine) == ["-", "queued", "queued", "sent"]
+    assert len([x for x in fake_smtp.sent if x[0] == "send"]) == 1  # only the instant rule e-mails now
+    assert {(n.category, n.strength) for n in mine} == {("hiring", "strong")}
+
+
 # --- notifications API -------------------------------------------------------------------------
 
 
@@ -625,6 +833,7 @@ async def test_notifications_api(org_id, user_id, client):
     )
     first = listed.json()[0]
     assert first["kind"] == "signal" and first["trend_kind"] == "hiring" and first["read_at"] is None
+    assert first["category"] == "hiring" and first["strength"] == "strong"  # the signal's temperature
     assert first["rule_id"] == str(r.id) and first["company_id"] == str(seeded.company_id)
     assert len((await client.get("/api/v1/notifications", params={"limit": 2}, headers=h)).json()) == 2
     assert (await client.get("/api/v1/notifications/unread-count", headers=h)).json() == {"count": 3}
@@ -709,6 +918,58 @@ async def test_preview_replays_the_last_30_days(org_id, user_id, client):
     assert (await client.get("/api/v1/alerts/rules", headers=h)).json() == []
 
 
+async def test_preview_honours_firmographic_scope_and_levels(org_id, user_id, client):
+    service_id = await ensure_service(org_id)
+    big = await seed_lead(org_id, service_id=service_id, name="Big DE")  # DE, logistics, 20 000 employees
+    small = await seed_lead(
+        org_id, service_id=service_id, name="Small FR", country="FR", industries=("banking",), employees=300
+    )
+    async with async_session_factory() as session, session.begin():
+        for i, (company, payload) in enumerate(
+            [
+                (big.company_id, {}),  # hiring, strong
+                (big.company_id, {"strength": "weak"}),
+                (small.company_id, {}),
+                (
+                    small.company_id,
+                    {"category": "incident", "summary": "Ransomware attack", "strength": "moderate"},
+                ),
+                (uuid4(), {}),  # a company that is not in the database
+            ]
+        ):
+            ev = signal_event(org_id, company, service_id, **payload)
+            events.emit_event(session, org_id, ev.type, ev.payload).created_at = NOW - timedelta(hours=i)
+    h = headers(org_id, "sales", user_id)
+
+    async def preview(trigger, scope=None):
+        body = {"name": "p", "trigger": trigger, "scope": scope or {}}
+        res = await client.post("/api/v1/alerts/rules/preview", json=body, headers=h)
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    assert (await preview({"kind": "signal"}))["count"] == 5
+    assert (await preview({"kind": "signal"}, {"countries": ["DE"]}))["count"] == 2
+    assert (await preview({"kind": "signal"}, {"employees_max": 1000}))["count"] == 2
+    assert (await preview({"kind": "signal"}, {"countries": ["FR"], "industries": ["banking"]}))["count"] == 2
+    assert (await preview({"kind": "signal"}, {"industries": ["retail"]}))["count"] == 0
+    levels = {"kind": "signal", "levels": {"hiring": "strong", "incident": "moderate"}}
+    hot = await preview(levels)
+    assert hot["count"] == 4  # not the weak hiring signal
+    assert (hot["notifications"][0]["category"], hot["notifications"][0]["strength"]) == ("hiring", "strong")
+    assert (await preview(levels, {"countries": ["FR"]}))["count"] == 2
+    assert (await preview({"kind": "signal", "levels": {"incident": "strong"}}))["count"] == 0
+
+    await add_jobs(org_id, big.company_id, 3)
+    await add_jobs(org_id, small.company_id, 3)
+    jobs = {"kind": "jobs_threshold", "jobs_min": 3}
+    assert (await preview(jobs))["count"] == 2
+    [only] = (await preview(jobs, {"countries": ["DE"]}))["notifications"]
+    assert only["company_id"] == str(big.company_id)
+    assert (await preview(jobs, {"employees_max": 1000}))["notifications"][0]["company_id"] == str(
+        small.company_id
+    )
+
+
 # --- jobs threshold task -----------------------------------------------------------------------
 
 
@@ -757,6 +1018,222 @@ async def test_jobs_threshold_task_notifies_once_per_window(org_id, user_id, fak
     assert len(await user_notifications(user_id)) == 2
 
 
+async def test_jobs_threshold_applies_the_firmographic_scope(org_id, user_id):
+    service_id = await ensure_service(org_id)
+    names = {}
+    for name, over in [
+        ("Big DE", {}),  # DE, logistics, 20 000 employees
+        ("Small FR", {"country": "FR", "industries": ("banking",), "employees": 300}),
+        ("Unknown size DE", {"employees": None}),
+    ]:
+        seeded = await seed_lead(org_id, service_id=service_id, name=name, signals=(), **over)
+        names[seeded.company_id] = name
+        await add_jobs(org_id, seeded.company_id, 2)
+
+    async def companies(scope: dict) -> list[str]:
+        r = rule(org_id, user_id, scope=scope, trigger={"kind": "jobs_threshold", "jobs_min": 2})
+        async with async_session_factory() as session:
+            drafts = await alerts_service.jobs_threshold_drafts(session, r, "https://radar.test", NOW)
+        return sorted(names[d.company_id] for d in drafts)
+
+    assert await companies({}) == ["Big DE", "Small FR", "Unknown size DE"]
+    assert await companies({"countries": ["DE"]}) == ["Big DE", "Unknown size DE"]
+    assert await companies({"employees_min": 1000}) == ["Big DE"]  # an unknown size does not match
+    assert await companies({"employees_max": 1000}) == ["Small FR"]
+    assert await companies({"industries": ["banking", "retail"]}) == ["Small FR"]
+    assert await companies({"countries": ["DE"], "industries": ["logistics"], "employees_max": 50000}) == [
+        "Big DE"
+    ]
+
+
+# --- e-mail digests ----------------------------------------------------------------------------
+
+
+async def queue_signal(
+    session, r: AlertRule, company_id: UUID, service_id: UUID, name: str, minute: int
+) -> None:
+    """A notification of rule `r` for a signal of `company_id`, created `minute` minutes after NOW."""
+    ev = signal_event(r.org_id, company_id, service_id, company_name=name, summary=f"signal {minute}")
+    draft = alerts_service.render_signal(ev, "https://radar.test")
+    (await alerts_service.notify(session, r, draft, None)).created_at = NOW + timedelta(minutes=minute)
+
+
+async def test_digest_groups_per_user_and_records_the_outcome(org_id, monkeypatch):
+    monkeypatch.setattr(settings, "ALERTS_DAILY_DIGEST_HOUR", 7)
+    service_id = await ensure_service(org_id)
+    company = {
+        name: (await seed_lead(org_id, service_id=service_id, name=name, signals=())).company_id
+        for name in ("Siemens AG", "DHL Group", "Bosch", "Lufthansa")
+    }
+    alice, bob, carol = uuid4(), uuid4(), uuid4()  # carol has no user account, so no e-mail address
+    alice_email = await create_user(org_id, alice)
+    bob_email = await create_user(org_id, bob)
+    async with async_session_factory() as session, session.begin():
+        twice = rule(org_id, alice, channels=["inapp", "email"], email_frequency="twice_daily")
+        daily = rule(org_id, alice, channels=["email"], email_frequency="daily")
+        bobs = rule(org_id, bob, channels=["email"], email_frequency="twice_daily")
+        carols = rule(org_id, carol, channels=["email"], email_frequency="twice_daily")
+        session.add_all([twice, daily, bobs, carols])
+        await session.flush()
+        for minute, (r, name) in enumerate(
+            [
+                (twice, "Siemens AG"),
+                (twice, "DHL Group"),
+                (twice, "Bosch"),
+                (twice, "DHL Group"),
+                (daily, "Lufthansa"),
+                (bobs, "Siemens AG"),
+                (carols, "Bosch"),
+            ]
+        ):
+            await queue_signal(session, r, company[name], service_id, name, minute)
+
+    mails: list[tuple[str, str, list[str]]] = []
+
+    async def mailer(to: str, subject: str, lines: list[str]) -> None:
+        if to == bob_email:
+            raise OSError("mailbox full")
+        mails.append((to, subject, lines))
+
+    async def run(hour: int) -> int:
+        now = datetime(2026, 9, 28, hour, 0, 30, tzinfo=UTC)
+        return await alerts_service.send_email_digests(
+            async_session_factory, "https://radar.test/", mailer, now=now, only_org=org_id
+        )
+
+    assert await run(15) == 1  # alice; bob's mailbox fails; carol has no e-mail; the daily rule waits
+    [(to, subject, lines)] = mails
+    assert to == alice_email
+    assert subject == "[LeadRadar] 4 new signals: DHL Group, Bosch and 1 more"
+    assert lines[:3] == [
+        "Hiring at DHL Group: signal 3",  # newest first
+        f"https://radar.test/companies/{company['DHL Group']}?service={service_id}",
+        "",
+    ]
+    assert [line for line in lines if line.startswith("Hiring at")] == [
+        "Hiring at DHL Group: signal 3",
+        "Hiring at Bosch: signal 2",
+        "Hiring at DHL Group: signal 1",
+        "Hiring at Siemens AG: signal 0",
+    ]
+    assert lines[-1] == "All notifications: https://radar.test"
+
+    outcome = {}
+    for user in (alice, bob, carol):
+        for n in await user_notifications(user):
+            outcome.setdefault((user, n.rule_id), set()).add(n.delivered["email"])
+    assert outcome == {
+        (alice, twice.id): {"sent"},
+        (alice, daily.id): {"queued"},
+        (bob, bobs.id): {"failed"},
+        (carol, carols.id): {"skipped"},
+    }
+
+    assert await run(15) == 0 and len(mails) == 1  # nothing left for twice_daily
+    assert await run(7) == 1  # the daily digest goes out with the run at ALERTS_DAILY_DIGEST_HOUR
+    assert mails[-1][:2] == (alice_email, "[LeadRadar] 1 new signal: Lufthansa")
+    assert {n.delivered["email"] for n in await user_notifications(alice)} == {"sent"}
+
+
+async def test_digest_queue_follows_the_rules_latest_settings(org_id, user_id):
+    seeded = await seed_lead(org_id, name="Acme Logistics")
+    await create_user(org_id, user_id)
+    async with async_session_factory() as session, session.begin():
+        rules = {
+            name: rule(org_id, user_id, name=name, channels=["email"], email_frequency=frequency)
+            for name, frequency in [
+                ("active", "twice_daily"),
+                ("paused", "twice_daily"),
+                ("muted", "twice_daily"),
+                ("deleted", "daily"),
+                ("instant again", "daily"),
+            ]
+        }
+        session.add_all(rules.values())
+        await session.flush()
+        for minute, r in enumerate(rules.values()):
+            await queue_signal(session, r, seeded.company_id, seeded.service_id, "Acme Logistics", minute)
+    async with async_session_factory() as session, session.begin():
+        (await session.get(AlertRule, rules["paused"].id)).is_active = False
+        (await session.get(AlertRule, rules["muted"].id)).channels = ["inapp"]
+        await session.delete(await session.get(AlertRule, rules["deleted"].id))
+        (await session.get(AlertRule, rules["instant again"].id)).email_frequency = "instant"
+
+    mails = []
+
+    async def mailer(to: str, subject: str, lines: list[str]) -> None:
+        mails.append(subject)
+
+    now = datetime(2026, 9, 28, 15, 0, tzinfo=UTC)
+    assert (
+        await alerts_service.send_email_digests(
+            async_session_factory, "https://radar.test", mailer, now=now, only_org=org_id
+        )
+        == 1
+    )
+    assert mails == ["[LeadRadar] 2 new signals: Acme Logistics"]  # active + switched back to instant
+    by_rule = {n.rule_id: n.delivered["email"] for n in await user_notifications(user_id)}
+    assert by_rule == {
+        rules["active"].id: "sent",
+        rules["instant again"].id: "sent",
+        rules["paused"].id: "skipped",
+        rules["muted"].id: "skipped",
+        None: "skipped",  # the rule was deleted
+    }
+
+    # without SMTP a queued e-mail is skipped, not kept forever
+    async with async_session_factory() as session, session.begin():
+        active = await session.get(AlertRule, rules["active"].id)
+        await queue_signal(session, active, seeded.company_id, seeded.service_id, "Acme Logistics", 10)
+    assert (
+        await alerts_service.send_email_digests(
+            async_session_factory, "https://radar.test", None, now=now, only_org=org_id
+        )
+        == 0
+    )
+    assert [n.delivered["email"] for n in await user_notifications(user_id)][-1] == "skipped"
+
+
+async def test_scheduled_digest_task_sends_over_smtp(org_id, user_id, fake_smtp, monkeypatch):
+    seeded = await seed_lead(org_id, name="Acme Logistics")
+    email = await create_user(org_id, user_id)
+    async with async_session_factory() as session, session.begin():
+        daily = rule(org_id, user_id, channels=["inapp", "email"], email_frequency="daily")
+        session.add(daily)
+        await session.flush()
+        await queue_signal(session, daily, seeded.company_id, seeded.service_id, "Acme Logistics", 0)
+    monkeypatch.setattr(settings, "SMTP_HOST", "smtp.test")
+    monkeypatch.setattr(settings, "SMTP_FROM", "radar@x.io")
+    monkeypatch.setattr(settings, "PUBLIC_ORIGIN", "https://radar.test")
+    monkeypatch.setattr(settings, "ALERTS_DAILY_DIGEST_HOUR", 9)
+    day = datetime(2026, 9, 28, tzinfo=UTC)
+
+    assert await scheduled.send_email_digests(now=day.replace(hour=7), only_org=org_id) == 0  # not the hour
+    assert await scheduled.send_email_digests(now=day.replace(hour=15), only_org=org_id) == 0
+    assert [n.delivered for n in await user_notifications(user_id)] == [{"email": "queued"}]
+    assert await scheduled.send_email_digests(now=day.replace(hour=9, minute=1), only_org=org_id) == 1
+    assert [n.delivered for n in await user_notifications(user_id)] == [{"email": "sent"}]
+    _, to, subject, content = fake_smtp.sent[-1]
+    assert to == email and subject == "[LeadRadar] 1 new signal: Acme Logistics"
+    assert (
+        "Hiring at Acme Logistics: signal 0" in content and "All notifications: https://radar.test" in content
+    )
+
+
+def test_digest_lists_at_most_50_notifications():
+    items = [
+        (Notification(title=f"Signal {i}", url=f"https://radar.test/companies/{i}"), f"Company {i % 3}")
+        for i in range(52)
+    ]
+    subject, lines = alerts_service.render_digest(items, "https://radar.test")
+    assert subject == "[LeadRadar] 52 new signals: Company 0, Company 1 and 1 more"
+    assert lines[:3] == ["Signal 0", "https://radar.test/companies/0", ""]
+    assert "Signal 49" in lines and "Signal 50" not in lines
+    assert lines[-3:] == ["and 2 more", "", "All notifications: https://radar.test"]
+    two, _ = alerts_service.render_digest(items[:2], "https://radar.test")
+    assert two == "[LeadRadar] 2 new signals: Company 0 and Company 1"
+
+
 # --- watch / unwatch ---------------------------------------------------------------------------
 
 
@@ -770,7 +1247,15 @@ async def test_watch_and_unwatch_company(org_id, user_id, client):
     assert res.status_code == 200, res.text
     watch_rule = res.json()
     assert watch_rule["name"] == "DHL Group — any signal" and watch_rule["channels"] == ["inapp", "email"]
-    assert watch_rule["scope"] == {"company_ids": [str(seeded.company_id)], "service_ids": None}
+    assert watch_rule["scope"] == {
+        "company_ids": [str(seeded.company_id)],
+        "service_ids": None,
+        "countries": None,
+        "industries": None,
+        "employees_min": None,
+        "employees_max": None,
+    }
+    assert watch_rule["email_frequency"] == "instant"  # a watched company is e-mailed right away
     assert watch_rule["trigger"]["kind"] == "signal" and watch_rule["trigger"]["categories"] is None
     assert (await client.post(f"{company}/watch", headers=h)).json()["id"] == watch_rule["id"]  # idempotent
     assert (await client.get(company, headers=h)).json()["watched"] is True
