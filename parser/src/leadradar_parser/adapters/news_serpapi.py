@@ -42,7 +42,7 @@ class SerpApiAdapter(SourceAdapter):
             }
             url = f"https://serpapi.com/search.json?{urllib.parse.urlencode(params)}"
             try:
-                response = await http.get(url, check_robots=False, attempts=1)
+                response = await http.get(url, check_robots=False, attempts=1, timeout=25.0)
                 if response.status_code != 200:
                     continue
                 data = response.json()

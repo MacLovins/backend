@@ -40,8 +40,8 @@ class LLMSettings(BaseSettings):
     )
 
     # Order = fallback order. Defaults are from the spec — verify availability in AI Studio.
-    main_models: Annotated[list[str], NoDecode] = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-    cheap_models: Annotated[list[str], NoDecode] = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]
+    main_models: Annotated[list[str], NoDecode] = ["gemini-3.8-flash", "gemini-3.5-flash"]
+    cheap_models: Annotated[list[str], NoDecode] = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
     limits_json: dict[str, ModelLimits] = {}  # model → {"rpm": 10, "rpd": 250}; missing model = no limit
     timeout_s: float = Field(default=90, gt=0)
     max_input_tokens: int = Field(default=30_000, gt=0)
