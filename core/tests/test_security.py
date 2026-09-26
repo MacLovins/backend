@@ -71,6 +71,9 @@ def test_security_create_app_fails_without_secret_outside_dev(monkeypatch: pytes
 
 
 def test_security_docs_disabled_outside_dev(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The broker is chosen once at import: after the worker tests it is the InMemoryBroker, whose startup
+    # builds the worker context (Gemini client). CI has no key, so give it a dummy one — no request is made.
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key-not-used")
     monkeypatch.setattr(settings, "ENV", "demo")
     monkeypatch.setattr(auth_settings, "JWT_SECRET", REAL_SECRET)
     monkeypatch.setattr(auth_settings, "COOKIE_SECURE", None)
