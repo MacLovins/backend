@@ -33,12 +33,19 @@ class NewsApiAdapter(SourceAdapter):
             "pageSize": 20,
             "language": "en",
         }
-        if plan.since:
-            params["from"] = plan.since.strftime("%Y-%m-%d")
+        from datetime import timedelta
+        earliest_allowed = datetime.now(UTC) - timedelta(days=28)
+        since_date = max(plan.since, earliest_allowed) if plan.since else earliest_allowed
+        params["from"] = since_date.strftime("%Y-%m-%d")
 
         url = f"https://newsapi.org/v2/everything?{urllib.parse.urlencode(params)}"
         try:
-            response = await http.get(url, check_robots=False, attempts=1)
+            response = await http.get(
+                url,
+                check_robots=False,
+                attempts=1,
+                headers={"User-Agent": "LeadRadar/1.0"},
+            )
             if response.status_code != 200:
                 return
             data = response.json()

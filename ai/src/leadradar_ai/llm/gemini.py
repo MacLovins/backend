@@ -69,11 +69,46 @@ class GeminiClient:
     def from_settings(
         cls, settings: LLMSettings, usage: UsageSink, cache: LLMCache | None = None
     ) -> "GeminiClient":
-        from leadradar_ai.llm.genai_transport import GenaiTransport
+        provider = settings.resolved_provider
+        if provider == "gemini":
+            from leadradar_ai.llm.genai_transport import GenaiTransport
 
-        if settings.api_key is None:
-            raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) is not set")
-        transport = GenaiTransport(settings.api_key.get_secret_value(), timeout_s=settings.timeout_s)
+            if settings.api_key is None:
+                raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) is not set")
+            transport = GenaiTransport(settings.api_key.get_secret_value(), timeout_s=settings.timeout_s)
+        elif provider in ("openai", "groq", "llama"):
+            from leadradar_ai.llm.openai_transport import OpenAITransport
+
+            api_key = None
+            base_url = settings.openai_base_url
+            if provider == "groq" and settings.groq_api_key:
+                api_key = settings.groq_api_key.get_secret_value()
+                base_url = base_url or "https://api.groq.com/openai/v1"
+            elif settings.openai_api_key:
+                api_key = settings.openai_api_key.get_secret_value()
+            elif settings.groq_api_key:
+                api_key = settings.groq_api_key.get_secret_value()
+                base_url = base_url or "https://api.groq.com/openai/v1"
+
+            transport = OpenAITransport(
+                api_key=api_key,
+                base_url=base_url,
+                timeout_s=settings.timeout_s,
+            )
+        elif provider == "anthropic":
+            from leadradar_ai.llm.anthropic_transport import AnthropicTransport
+
+            api_key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else None
+            if not api_key:
+                raise ValueError("ANTHROPIC_API_KEY is not set")
+            transport = AnthropicTransport(api_key=api_key, timeout_s=settings.timeout_s)
+        else:
+            from leadradar_ai.llm.genai_transport import GenaiTransport
+
+            if settings.api_key is None:
+                raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) is not set")
+            transport = GenaiTransport(settings.api_key.get_secret_value(), timeout_s=settings.timeout_s)
+
         return cls(settings, transport, usage, cache)
 
     async def generate[T: BaseModel](self, request: LLMRequest[T]) -> LLMResult[T]:

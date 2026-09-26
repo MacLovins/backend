@@ -27,10 +27,13 @@ def test_cli_adapters_prints_json_lines() -> None:
         "gdelt",
         "newsapi",
         "serpapi",
+        "rsshub",
         "website",
+        "playwright",
         "jobs_ats",
         "careers_html",
         "wikidata",
+        "crunchbase",
     }
     assert next(row for row in rows if row["id"] == "gdelt")["rate_limit"]["per_seconds"] == 5
 

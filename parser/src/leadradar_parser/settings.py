@@ -6,20 +6,28 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+import sys
+
 class ParserSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PARSER_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PARSER_",
+        env_file=None if "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") else ".env",
+        extra="ignore",
+    )
 
     # NoDecode: PARSER_ADAPTERS is a comma-separated string (.env.example), not JSON.
     adapters: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "google_news",
             "gdelt",
+            "rsshub",
             "website",
             "jobs_ats",
             "careers_html",
             "wikidata",
             *(["newsapi"] if os.getenv("NEWSAPI_KEY") else []),
             *(["serpapi"] if os.getenv("SERPAPI_KEY") else []),
+            *(["crunchbase"] if os.getenv("CRUNCHBASE_API_KEY") else []),
         ]
     )
     user_agent: str = (

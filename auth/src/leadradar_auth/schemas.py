@@ -18,10 +18,11 @@ class Principal(BaseModel):
 
 
 class LoginIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     email: EmailStr
     password: str
+    remember_me: bool = False
 
 
 class UserOut(BaseModel):
@@ -37,6 +38,10 @@ class UserOut(BaseModel):
 
 class LoginResponse(BaseModel):
     user: UserOut
+    access: str | None = None
+    refresh: str | None = None
+    role: str | None = None
+    token_type: str = "bearer"
 
 
 class TokenResponse(BaseModel):

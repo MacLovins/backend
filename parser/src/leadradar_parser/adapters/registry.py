@@ -8,8 +8,11 @@ from .jobs_careers_html import CareersHtmlAdapter
 from .news_gdelt import GdeltAdapter
 from .news_google import GoogleNewsAdapter
 from .news_newsapi import NewsApiAdapter
+from .news_rsshub import RSSHubAdapter
 from .news_serpapi import SerpApiAdapter
+from .registry_crunchbase import CrunchbaseAdapter
 from .registry_wikidata import WikidataAdapter
+from .web_playwright import PlaywrightAdapter
 from .web_site import WebsiteAdapter
 
 ADAPTERS: dict[str, SourceAdapter] = {
@@ -19,10 +22,13 @@ ADAPTERS: dict[str, SourceAdapter] = {
         GdeltAdapter(),
         NewsApiAdapter(),
         SerpApiAdapter(),
+        RSSHubAdapter(),
         WebsiteAdapter(),
+        PlaywrightAdapter(),
         JobsAtsAdapter(),
         CareersHtmlAdapter(),
         WikidataAdapter(),
+        CrunchbaseAdapter(),
     )
 }
 

@@ -422,3 +422,27 @@ class RunStats(Contract):
     evidence_rejected: int = 0
     extraction_skipped_services: int = 0  # fingerprint unchanged
     duration_ms_by_stage: dict[str, int] = {}
+
+
+OutreachChannel = Literal["email", "linkedin_inmail", "call_script"]
+OutreachTone = Literal["professional", "conversational", "direct"]
+
+
+class OutreachRequest(Contract):
+    channel: OutreachChannel = "email"
+    language: str = "en"
+    tone: OutreachTone = "professional"
+    sender_name: str | None = None
+    sender_title: str | None = None
+    sender_company: str = "LeadRadar"
+
+
+class OutreachDraft(Contract):
+    channel: OutreachChannel
+    subject: str | None = None
+    body: str
+    referenced_signals: list[UUID] = []
+    referenced_quotes: list[str] = []
+    hook: str | None = None
+    call_to_action: str
+    language: str = "en"

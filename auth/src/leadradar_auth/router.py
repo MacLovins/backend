@@ -85,6 +85,9 @@ def create_auth_router(
 
         return LoginResponse(
             user=UserOut.model_validate(user),
+            access=token,
+            refresh=token,
+            role=user.role,
         )
 
     @router.post("/token", response_model=TokenResponse)
@@ -108,6 +111,34 @@ def create_auth_router(
         _, principal = result
         token = create_access_token(principal)
         return TokenResponse(access_token=token, token_type="bearer")
+
+    @router.post("/refresh", response_model=LoginResponse)
+    async def refresh(
+        request: Request,
+        response: Response,
+        principal: Annotated[Principal, Depends(get_current_principal)],
+        session: Annotated[AsyncSession, Depends(get_session)],
+    ) -> LoginResponse:
+        service = AuthService(session)
+        user = await service.get_by_id(principal.user_id)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        token = create_access_token(principal)
+        response.set_cookie(
+            key=auth_settings.COOKIE_NAME,
+            value=token,
+            max_age=auth_settings.ACCESS_TTL_MIN * 60,
+            httponly=True,
+            secure=auth_settings.COOKIE_SECURE,
+            samesite="lax",
+            path="/",
+        )
+        return LoginResponse(
+            user=UserOut.model_validate(user),
+            access=token,
+            refresh=token,
+            role=user.role,
+        )
 
     @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
     async def logout(response: Response) -> None:
