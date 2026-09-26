@@ -64,7 +64,9 @@ def hubspot() -> Iterator[respx.MockRouter]:
     with respx.mock(base_url=BASE_URL, assert_all_called=False) as mock:
         mock.post("/crm/v3/properties/companies/groups").respond(409, json={"message": "exists"})
         mock.post("/crm/v3/properties/companies", name="properties").respond(201, json={})
-        mock.get("/account-info/v3/details").respond(200, json={"portalId": 4242})
+        mock.get("/account-info/v3/details").respond(
+            200, json={"portalId": 4242, "uiDomain": "app-eu1.hubspot.com"}
+        )
         mock.post("/crm/v3/objects/notes", name="notes").respond(201, json={"id": "note-1"})
         yield mock
 
@@ -85,7 +87,7 @@ async def test_new_domain_creates_the_company_with_score_and_note(hubspot) -> No
         result = await client.push_lead(snapshot())
 
     assert (result.company_id, result.created, result.note_id) == ("501", True, "note-1")
-    assert result.record_url == "https://app.hubspot.com/contacts/4242/record/0-2/501"
+    assert result.record_url == "https://app-eu1.hubspot.com/contacts/4242/record/0-2/501"
     props = json.loads(create.calls.last.request.content)["properties"]
     assert props["name"] == "Acme Logistics" and props["domain"] == "acme.example"
     assert props["leadradar_tier"] == "hot" and props["leadradar_priority"] == 71.4

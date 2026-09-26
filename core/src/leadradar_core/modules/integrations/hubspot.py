@@ -164,11 +164,14 @@ class HubSpotClient:
             )
         self._ready.add(self._key)
 
-    async def portal_id(self) -> int | None:
+    async def record_url(self, company_id: str) -> str | None:
+        """The UI host depends on data hosting: app.hubspot.com, app-eu1.hubspot.com…"""
         try:
-            return (await self._call("GET", "/account-info/v3/details")).get("portalId")
+            info = await self._call("GET", "/account-info/v3/details")
         except HubSpotError:
             return None
+        portal, host = info.get("portalId"), info.get("uiDomain") or "app.hubspot.com"
+        return f"https://{host}/contacts/{portal}/record/0-2/{company_id}" if portal else None
 
     async def find_company(self, domain: str) -> str | None:
         data = await self._call(
@@ -242,6 +245,5 @@ class HubSpotClient:
                 company_id = await self.create_company(basics | props)
                 created = True
         note_id = await self.add_note(company_id, note_body(lead))
-        portal = await self.portal_id()
-        url = f"https://app.hubspot.com/contacts/{portal}/record/0-2/{company_id}" if portal else None
+        url = await self.record_url(company_id)
         return PushResult(company_id=company_id, created=created, note_id=note_id, record_url=url)
