@@ -1,0 +1,51 @@
+name: Backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: uv run lint-imports
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: leadradar
+          POSTGRES_PASSWORD: leadradar
+          POSTGRES_DB: leadradar
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U leadradar" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      APP_DATABASE_URL: postgresql+asyncpg://leadradar:leadradar@localhost:5432/leadradar
+      APP_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: uv run --package leadradar-core alembic -c core/alembic.ini upgrade head
+      # network-free: LLM and embeddings are fakes, @pytest.mark.live tests are skipped
+      - run: uv run pytest -q
