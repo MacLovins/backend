@@ -1,5 +1,25 @@
 name: leadradar-backend
 
+# Общая часть для всех сервисов на образе app (api, worker, migrate, seed, test, lint).
+# Core читает настройки ТОЛЬКО с префиксом APP_ (см. core/src/leadradar_core/settings.py),
+# поэтому адреса postgres/redis внутри docker-сети задаём как APP_DATABASE_URL / APP_REDIS_URL.
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: app
+  env_file: .env
+  environment: &app-env
+    APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-leadradar}:${POSTGRES_PASSWORD:-leadradar}@postgres:5432/${POSTGRES_DB:-leadradar}
+    APP_REDIS_URL: redis://redis:6379/0
+    PARSER_CACHE_DIR: /app/.cache/parser
+    AI_EMBED_CACHE_DIR: /app/.cache/fastembed
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -10,7 +30,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-leadradar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leadradar}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +45,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -34,11 +54,69 @@ services:
       timeout: 3s
       retries: 10
 
+  api:
+    <<: *app
+    container_name: leadradar-api
+    restart: unless-stopped
+    command: ["uvicorn", "leadradar_core.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - api-cache:/app/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    <<: *app
+    container_name: leadradar-worker
+    restart: unless-stopped
+    command: ["taskiq", "worker", "leadradar_core.worker.broker:broker", "--workers", "1", "--max-async-tasks", "3"]
+    volumes:
+      - worker-cache:/app/.cache
+
+  # --- одноразовые команды: docker compose run --rm <service> ---
+  migrate:
+    <<: *app
+    profiles: ["tools"]
+    command: ["alembic", "-c", "core/alembic.ini", "upgrade", "head"]
+
+  seed:
+    <<: *app
+    profiles: ["tools"]
+    command: ["lr", "seed"]
+
+  test:
+    <<: *app
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      <<: *app-env
+      APP_ENV: test
+    command: ["pytest"]
+
+  lint:
+    <<: *app
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    depends_on: {}
+    command: ["sh", "-c", "lint-imports && ruff check . && ruff format --check ."]
+
   parser:
     profiles: ["tools"]
     build:
       context: .
       dockerfile: Dockerfile
+      target: parser
     environment:
       PARSER_USER_AGENT: ${PARSER_USER_AGENT:-LeadRadarBot/0.1 (+https://example.invalid/bot; engineering@example.invalid)}
       PARSER_ADAPTERS: ${PARSER_ADAPTERS:-gdelt,website,jobs_ats,careers_html,wikidata}
@@ -49,4 +127,6 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  api-cache:
+  worker-cache:
   parser-cache:
