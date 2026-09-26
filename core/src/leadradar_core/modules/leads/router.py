@@ -11,6 +11,7 @@ from leadradar_auth.schemas import Principal
 from leadradar_core.db.session import get_db_session
 from leadradar_core.modules.accounts.models import Company
 from leadradar_core.modules.accounts.schemas import CompanyOut
+from leadradar_core.modules.alerts.service import watched_company_ids, watched_expr
 from leadradar_core.modules.config.models import ScoringProfile, Service, SignalQuestion
 from leadradar_core.modules.feedback.models import Feedback
 from leadradar_core.modules.intelligence.models import Document, Signal
@@ -18,17 +19,26 @@ from leadradar_core.modules.leads.models import LeadScore
 from leadradar_core.modules.leads.schemas import (
     LeadDetail,
     LeadListItem,
+    LeadsSummary,
     QuestionSignals,
     ScoreSummary,
     SignalItem,
+    TrendCount,
+)
+from leadradar_core.modules.leads.trends import (
+    evidence_key_expr,
+    trend_kind_expr,
+    trend_rows_query,
+    trends_from_rows,
 )
 from leadradar_core.pagination import PaginatedResponse
-from sqlalchemy import Date, Select, and_, cast, func, or_, select
+from sqlalchemy import Date, Select, and_, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
 NEW_SIGNAL_WINDOW = timedelta(days=7)
+JOBS_OPEN_WINDOW = timedelta(days=30)
 
 
 # --- list filters (shared by the list and the CSV export) -------------------------------------
@@ -95,14 +105,31 @@ def _signal_stats(org_id: UUID):
     )
 
 
+def _jobs_open(org_id: UUID):
+    """Job postings per company published in the last 30 days."""
+    return (
+        select(Document.company_id, func.count(Document.id).label("jobs_open"))
+        .where(
+            Document.org_id == org_id,
+            Document.source_type == "jobs",
+            Document.published_at >= datetime.now(UTC) - JOBS_OPEN_WINDOW,
+        )
+        .group_by(Document.company_id)
+        .subquery("jobs_open")
+    )
+
+
+TIERS = ("hot", "warm", "cold", "disqualified")
 SORT_FIELDS = {"priority", "fit", "intent", "risk", "name", "last_signal_at", "signals_count"}
 
 
-def _leads_query(org_id: UUID, filters: LeadFilters, sort: str) -> Select:
+def _leads_query(org_id: UUID, filters: LeadFilters, sort: str, user_id: UUID | None = None) -> Select:
     """One query for the whole page: current score + company + signal aggregates, filtered in SQL."""
     stats = _signal_stats(org_id)
+    jobs = _jobs_open(org_id)
     signals_count = func.coalesce(stats.c.signals_count, 0)
     new_signals = func.coalesce(stats.c.new_signals_7d, 0)
+    watched = watched_expr(user_id, Company.id) if user_id is not None else literal(False)
     stmt = (
         select(
             LeadScore,
@@ -110,12 +137,15 @@ def _leads_query(org_id: UUID, filters: LeadFilters, sort: str) -> Select:
             signals_count.label("signals_count"),
             new_signals.label("new_signals_7d"),
             stats.c.last_signal_at,
+            jobs.c.jobs_open,
+            watched.label("watched"),
         )
         .join(Company, LeadScore.company_id == Company.id)
         .outerjoin(
             stats,
             and_(stats.c.company_id == LeadScore.company_id, stats.c.service_id == LeadScore.service_id),
         )
+        .outerjoin(jobs, jobs.c.company_id == LeadScore.company_id)
         .where(LeadScore.org_id == org_id, LeadScore.is_current.is_(True))
     )
     if filters.service_id:
@@ -177,26 +207,98 @@ async def list_leads(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> PaginatedResponse[LeadListItem]:
-    stmt = _leads_query(principal.org_id, filters, sort)
+    stmt = _leads_query(principal.org_id, filters, sort, principal.user_id)
     count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
     total = (await session.execute(count_stmt)).scalar() or 0
 
     rows = (await session.execute(stmt.offset((page - 1) * page_size).limit(page_size))).all()
-    items = [
-        LeadListItem(
-            company=CompanyOut.model_validate(company),
-            service_id=score.service_id,
-            score=ScoreSummary.model_validate(score),
-            top_reasons=score.why_now or [],
-            flags=_flags(score.rule_hits),
-            signals_count=signals_count,
-            new_signals_7d=new_signals_7d,
-            last_signal_at=last_signal_at,
-            analyzed_at=company.last_analyzed_at,
+    trends = await _page_trends(session, principal.org_id, [(s.company_id, s.service_id) for s, *_ in rows])
+    items = []
+    for score, company, signals_count, new_signals_7d, last_signal_at, jobs_open, watched in rows:
+        company_out = CompanyOut.model_validate(company)
+        company_out.watched = bool(watched)
+        items.append(
+            LeadListItem(
+                company=company_out,
+                service_id=score.service_id,
+                score=ScoreSummary.model_validate(score),
+                top_reasons=score.why_now or [],
+                flags=_flags(score.rule_hits),
+                signals_count=signals_count,
+                new_signals_7d=new_signals_7d,
+                last_signal_at=last_signal_at,
+                analyzed_at=company.last_analyzed_at,
+                trends=trends.get((score.company_id, score.service_id), []),
+                jobs_open=jobs_open,
+                watched=bool(watched),
+            )
         )
-        for score, company, signals_count, new_signals_7d, last_signal_at in rows
-    ]
     return PaginatedResponse(items=items, total=total, page=page, page_size=page_size)
+
+
+async def _page_trends(session: AsyncSession, org_id: UUID, keys: list[tuple[UUID, UUID]]):
+    """Trends of the page's (company, service) pairs in one query (the third one of the list)."""
+    if not keys:
+        return {}
+    company_ids = {c for c, _ in keys}
+    service_ids = {s for _, s in keys}
+    rows = await session.execute(
+        trend_rows_query(org_id, [Signal.company_id.in_(company_ids), Signal.service_id.in_(service_ids)])
+    )
+    return trends_from_rows(rows.all())
+
+
+@router.get("/summary", response_model=LeadsSummary)
+async def leads_summary(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    service_id: Annotated[UUID | None, Query()] = None,
+) -> LeadsSummary:
+    """Totals for the Leads start page in three queries: tiers, signal trends, watched companies."""
+    org_id = principal.org_id
+    scores = select(
+        func.count(LeadScore.id),
+        *(func.count(LeadScore.id).filter(LeadScore.tier == t) for t in TIERS),
+    ).where(LeadScore.org_id == org_id, LeadScore.is_current.is_(True))
+    if service_id is not None:
+        scores = scores.where(LeadScore.service_id == service_id)
+    total, *by_tier = (await session.execute(scores)).one()
+
+    kind = trend_kind_expr()
+    cutoff = datetime.now(UTC) - NEW_SIGNAL_WINDOW
+    trends_stmt = (
+        select(
+            kind.label("kind"),
+            func.count(func.distinct(evidence_key_expr())).label("count"),
+            func.count(Signal.id).filter(Signal.detected_at >= cutoff).label("new_7d"),
+        )
+        .join(
+            SignalQuestion, and_(SignalQuestion.id == Signal.question_id, SignalQuestion.is_active.is_(True))
+        )
+        .where(Signal.org_id == org_id, Signal.status == "active")
+        .group_by(kind)
+    )
+    if service_id is not None:
+        trends_stmt = trends_stmt.where(Signal.service_id == service_id)
+    trend_rows = (await session.execute(trends_stmt)).all()
+    new_signals_7d = sum(new for _, _, new in trend_rows)
+    trends_top = sorted(
+        (TrendCount(kind=k, count=c) for k, c, _ in trend_rows if k is not None),
+        key=lambda t: (-t.count, t.kind),
+    )
+
+    watched = await session.scalar(
+        select(func.count(func.distinct(Company.id))).where(
+            Company.org_id == org_id, watched_expr(principal.user_id, Company.id)
+        )
+    )
+    return LeadsSummary(
+        total=total or 0,
+        by_tier=dict(zip(TIERS, by_tier, strict=True)),
+        new_signals_7d=new_signals_7d,
+        watched=watched or 0,
+        trends_top=trends_top,
+    )
 
 
 @router.get("/export.csv")
@@ -231,7 +333,7 @@ async def export_leads_csv(
             "Last Signal",
         ]
     )
-    for score, company, signals_count, new_signals_7d, last_signal_at in rows:
+    for score, company, signals_count, new_signals_7d, last_signal_at, *_ in rows:
         reasons_text = "; ".join(r.get("text", "") for r in (score.why_now or []))
         writer.writerow(
             [
@@ -357,12 +459,24 @@ async def get_lead_detail(
             )
         ).all()
     )
+    watched = company_id in await watched_company_ids(session, principal.org_id, principal.user_id)
+    company_out = CompanyOut.model_validate(company)
+    company_out.watched = watched
+    jobs_open = await session.scalar(
+        select(func.count(Document.id)).where(
+            Document.company_id == company_id,
+            Document.source_type == "jobs",
+            Document.published_at >= datetime.now(UTC) - JOBS_OPEN_WINDOW,
+        )
+    )
     if service is None:
         return LeadDetail(
-            company=CompanyOut.model_validate(company),
+            company=company_out,
             service={},
             score={},
             sources_summary=sources_summary,
+            jobs_open=jobs_open,
+            watched=watched,
         )
 
     score_row = (
@@ -497,8 +611,17 @@ async def get_lead_detail(
         for h in history_rows
     ]
 
+    trends = trends_from_rows(
+        (
+            await session.execute(
+                trend_rows_query(
+                    principal.org_id, [Signal.company_id == company_id, Signal.service_id == service.id]
+                )
+            )
+        ).all()
+    )
     return LeadDetail(
-        company=CompanyOut.model_validate(company),
+        company=company_out,
         service={"id": str(service.id), "name": service.name},
         score=score_data,
         signals_by_question=signals_by_question,
@@ -507,4 +630,7 @@ async def get_lead_detail(
         decision_makers=service.decision_makers or ["CIO", "COO", "Head of Digital Transformation"],
         history=history,
         sources_summary=sources_summary,
+        trends=trends.get((company_id, service.id), []),
+        jobs_open=jobs_open,
+        watched=watched,
     )

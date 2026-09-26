@@ -6,6 +6,8 @@ from their `schedule` labels and executed by the worker:
 - resume_paused    (APP_RESUME_PAUSED_CRON, every 15 min): companies paused by the LLM quota continue from
   their checkpoint (same run_id and company → same LangGraph thread).
 - dispatch_events  (APP_DISPATCH_EVENTS_CRON, every minute): the outbox dispatcher.
+- evaluate_jobs_thresholds (APP_JOBS_ALERTS_CRON, hourly): alert rules of kind jobs_threshold ("100+ job
+  postings in a day"); a (rule, company) is notified once per window.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -18,6 +20,7 @@ from leadradar_core import integrations
 from leadradar_core.db.session import async_session_factory
 from leadradar_core.modules.accounts.models import Company
 from leadradar_core.modules.activity.dispatcher import Consumer, dispatch_pending
+from leadradar_core.modules.alerts import service as alerts_service
 from leadradar_core.modules.config.models import Service
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
 from leadradar_core.settings import settings
@@ -218,6 +221,21 @@ async def dispatch_outbox() -> int:
     return total
 
 
+# --- evaluate_jobs_thresholds ------------------------------------------------------------------
+
+
+async def evaluate_jobs_thresholds(now: datetime | None = None, only_org: UUID | None = None) -> int:
+    """One pass over the jobs_threshold alert rules; returns the number of notifications created."""
+    from leadradar_core.integrations.alert_rules import mailer_for
+
+    created = await alerts_service.evaluate_jobs_thresholds(
+        async_session_factory, settings.PUBLIC_ORIGIN, mailer_for(settings), now=now, only_org=only_org
+    )
+    if created:
+        log.info("jobs_threshold_notified", notifications=len(created))
+    return len(created)
+
+
 # --- task registration -------------------------------------------------------------------------
 
 
@@ -246,3 +264,12 @@ async def resume_paused() -> int:
 )
 async def dispatch_events() -> int:
     return await dispatch_outbox()
+
+
+@broker.task(
+    task_name="evaluate_jobs_thresholds",
+    retry_on_error=False,
+    schedule=[{"cron": settings.JOBS_ALERTS_CRON, "schedule_id": "evaluate_jobs_thresholds"}],
+)
+async def evaluate_jobs_thresholds_task() -> int:
+    return await evaluate_jobs_thresholds()

@@ -17,6 +17,7 @@ from leadradar_core.modules.accounts.schemas import (
     DocumentOut,
 )
 from leadradar_core.modules.accounts.service import check_import_size, import_companies
+from leadradar_core.modules.alerts.service import watched_company_ids
 from leadradar_core.modules.intelligence.models import Document
 from leadradar_core.pagination import PaginatedResponse
 from leadradar_core.settings import settings
@@ -25,6 +26,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["accounts"])
+
+
+def company_out(company: Company, watched: set[UUID]) -> CompanyOut:
+    out = CompanyOut.model_validate(company)
+    out.watched = company.id in watched
+    return out
 
 
 @router.get("/companies", response_model=PaginatedResponse[CompanyOut])
@@ -54,9 +61,10 @@ async def list_companies(
     stmt = stmt.order_by(Company.created_at.desc()).offset(offset).limit(page_size)
     res = await session.execute(stmt)
     companies = res.scalars().all()
+    watched = await watched_company_ids(session, principal.org_id, principal.user_id)
 
     return PaginatedResponse(
-        items=[CompanyOut.model_validate(c) for c in companies],
+        items=[company_out(c, watched) for c in companies],
         total=total,
         page=page,
         page_size=page_size,
@@ -115,7 +123,7 @@ async def get_company(
     company = await session.get(Company, id)
     if not company or company.org_id != principal.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
-    return CompanyOut.model_validate(company)
+    return company_out(company, await watched_company_ids(session, principal.org_id, principal.user_id))
 
 
 @router.patch("/companies/{id}", response_model=CompanyOut)

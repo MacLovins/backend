@@ -3,6 +3,7 @@
 from leadradar_core.db.base import Base, core_metadata
 from leadradar_core.modules.accounts.models import Company, Org
 from leadradar_core.modules.activity.models import DomainEvent
+from leadradar_core.modules.alerts.models import AlertRule, Notification
 from leadradar_core.modules.config.models import (
     DisqualificationRule,
     ICPProfile,
@@ -24,6 +25,7 @@ from leadradar_core.modules.outreach.models import OutreachJob
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
 
 __all__ = [
+    "AlertRule",
     "AnalysisRun",
     "Base",
     "Company",
@@ -37,6 +39,7 @@ __all__ = [
     "LLMCache",
     "LLMCall",
     "LeadScore",
+    "Notification",
     "Org",
     "OutreachJob",
     "RejectedEvidence",

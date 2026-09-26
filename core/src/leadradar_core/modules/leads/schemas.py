@@ -3,6 +3,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from leadradar_core.modules.accounts.schemas import CompanyOut
+from leadradar_core.modules.leads.trends import TrendKind, TrendOut
 from pydantic import BaseModel, ConfigDict
 
 
@@ -29,6 +30,27 @@ class LeadListItem(BaseModel):
     new_signals_7d: int = 0
     last_signal_at: date | None = None
     analyzed_at: datetime | None = None
+    # trends: active signals of the service folded into kinds (hiring, layoffs, growth...)
+    trends: list[TrendOut] = []
+    # job postings of the company published in the last 30 days (null: nothing collected)
+    jobs_open: int | None = None
+    # the current user has an active alert rule scoped to this company
+    watched: bool = False
+
+
+class TrendCount(BaseModel):
+    kind: TrendKind
+    count: int
+
+
+class LeadsSummary(BaseModel):
+    """The Leads start page: how many leads, by tier, what moved this week, what is watched."""
+
+    total: int
+    by_tier: dict[str, int]  # hot / warm / cold / disqualified
+    new_signals_7d: int
+    watched: int
+    trends_top: list[TrendCount] = []
 
 
 class SignalItem(BaseModel):
@@ -64,3 +86,6 @@ class LeadDetail(BaseModel):
     decision_makers: list[str] = []
     history: list[dict[str, Any]] = []
     sources_summary: dict[str, int] = {}
+    trends: list[TrendOut] = []
+    jobs_open: int | None = None
+    watched: bool = False
