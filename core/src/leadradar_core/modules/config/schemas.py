@@ -67,6 +67,16 @@ class ServiceOut(BaseModel):
 
 
 # Signal Question Schemas
+class TemperatureGuide(BaseModel):
+    """What cold, medium and hot evidence means for a question: signal strength weak / moderate / strong."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    weak: str = Field(..., min_length=1, max_length=300)  # cold
+    moderate: str = Field(..., min_length=1, max_length=300)  # medium
+    strong: str = Field(..., min_length=1, max_length=300)  # hot
+
+
 class SignalQuestionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -79,6 +89,7 @@ class SignalQuestionCreate(BaseModel):
     recency_days: int = Field(default=180, gt=0)
     job_titles: list[str] = []
     negative_terms: list[str] = []
+    temperature: TemperatureGuide | None = None  # null: the category default (GET /meta/temperature)
 
 
 class SignalQuestionUpdate(BaseModel):
@@ -92,6 +103,7 @@ class SignalQuestionUpdate(BaseModel):
     recency_days: int | None = Field(default=None, gt=0)
     job_titles: list[str] | None = None
     negative_terms: list[str] | None = None
+    temperature: TemperatureGuide | None = None  # an explicit null resets to the category default
     is_active: bool | None = None
 
 
@@ -111,6 +123,7 @@ class SignalQuestionOut(BaseModel):
     keywords: dict[str, Any] | None = None
     job_titles: list[str]
     negative_terms: list[str]
+    temperature: TemperatureGuide | None = None  # null: the category default
     keywords_status: str
     version: int
     is_active: bool

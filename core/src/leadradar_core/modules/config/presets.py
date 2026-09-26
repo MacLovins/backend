@@ -58,6 +58,7 @@ async def create_service_from_preset(session: AsyncSession, org_id: UUID, key: s
                 keywords=q.keywords_seed,
                 job_titles=q.job_titles,
                 negative_terms=q.negative_terms,
+                temperature=dict(q.temperature) or None,  # none: the category default
                 keywords_status="pending",  # expand_question adds multilingual terms to the seed
                 version=1,
                 is_active=True,

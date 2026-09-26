@@ -75,7 +75,7 @@
 |---|---|---|---|
 | `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | — / любой | Из пакета auth (см. его SPEC) | P0 |
 | `GET/POST /auth/users` · `PATCH /auth/users/{id}` | admin | Управление пользователями | P1 |
-| `GET /meta/industries` · `/meta/countries` · `/meta/presets` · `/meta/labels` | любой | Справочники для UI | P0 |
+| `GET /meta/industries` · `/meta/countries` · `/meta/presets` · `/meta/labels` · `/meta/temperature` | любой | Справочники для UI (`temperature` — что значит cold / medium / hot по категориям) | P0 |
 | `GET /meta/usage` | любой | Квоты LLM и объёмы сбора | P1 |
 | `GET/POST /services` · `GET/PATCH /services/{id}` | чтение — любой, запись — admin | Услуги | P0 |
 | `POST /presets/{key}/apply` | admin | Создать услугу из пресета (идемпотентно по slug) | P0 |

@@ -516,6 +516,47 @@
         ]
       }
     },
+    "/api/v1/meta/temperature": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Get Temperature Defaults",
+        "description": "Signal temperature per category: what cold (weak), medium (moderate) and hot (strong) evidence is.",
+        "operationId": "get_temperature_defaults_api_v1_meta_temperature_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemperatureDefaultOut"
+                  },
+                  "type": "array",
+                  "title": "Response Get Temperature Defaults Api V1 Meta Temperature Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/meta/labels": {
       "get": {
         "tags": [
@@ -8316,6 +8357,16 @@
             "type": "array",
             "title": "Negative Terms",
             "default": []
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemperatureGuide"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -8399,6 +8450,16 @@
             },
             "type": "array",
             "title": "Negative Terms"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemperatureGuide"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "keywords_status": {
             "type": "string",
@@ -8566,6 +8627,16 @@
             ],
             "title": "Negative Terms"
           },
+          "temperature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemperatureGuide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "is_active": {
             "anyOf": [
               {
@@ -8723,6 +8794,66 @@
           "cap_value"
         ],
         "title": "SuggestedRuleOut"
+      },
+      "TemperatureDefaultOut": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "weak": {
+            "type": "string",
+            "title": "Weak"
+          },
+          "moderate": {
+            "type": "string",
+            "title": "Moderate"
+          },
+          "strong": {
+            "type": "string",
+            "title": "Strong"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "weak",
+          "moderate",
+          "strong"
+        ],
+        "title": "TemperatureDefaultOut",
+        "description": "The default signal temperature guide of a category: cold, medium and hot are strength weak / moderate /\nstrong (a question may have its own guide)."
+      },
+      "TemperatureGuide": {
+        "properties": {
+          "weak": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Weak"
+          },
+          "moderate": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Moderate"
+          },
+          "strong": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Strong"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "weak",
+          "moderate",
+          "strong"
+        ],
+        "title": "TemperatureGuide",
+        "description": "What cold, medium and hot evidence means for a question: signal strength weak / moderate / strong."
       },
       "TokenResponse": {
         "properties": {

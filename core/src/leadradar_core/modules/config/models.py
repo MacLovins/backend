@@ -54,6 +54,8 @@ class SignalQuestion(Base, CoreTableMixin):
     keywords_status: Mapped[str] = mapped_column(
         String(32), default="pending", nullable=False
     )  # pending / ready / failed
+    # own cold / medium / hot guide {"weak", "moderate", "strong"} → text; null = the category default
+    temperature: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

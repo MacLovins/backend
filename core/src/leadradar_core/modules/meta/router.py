@@ -7,7 +7,14 @@ from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
 from leadradar_core.db.session import get_db_session
 from leadradar_core.modules.meta import service as meta_service
-from leadradar_core.modules.meta.schemas import CountryOut, IndustryOut, LabelsOut, PresetOut, UsageOut
+from leadradar_core.modules.meta.schemas import (
+    CountryOut,
+    IndustryOut,
+    LabelsOut,
+    PresetOut,
+    TemperatureDefaultOut,
+    UsageOut,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/meta", tags=["meta"], dependencies=[Depends(get_current_principal)])
@@ -33,6 +40,12 @@ async def get_countries() -> list[CountryOut]:
 @router.get("/presets", response_model=list[PresetOut])
 async def get_presets() -> list[PresetOut]:
     return meta_service.presets()
+
+
+@router.get("/temperature", response_model=list[TemperatureDefaultOut])
+async def get_temperature_defaults() -> list[TemperatureDefaultOut]:
+    """Signal temperature per category: what cold (weak), medium (moderate) and hot (strong) evidence is."""
+    return meta_service.temperature_defaults()
 
 
 @router.get("/labels", response_model=LabelsOut)
