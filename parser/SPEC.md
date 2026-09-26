@@ -26,38 +26,36 @@
 привести всё к единому `Document` с датами и дедупом, не упасть при сбое отдельного источника и не нарушить
 robots.txt и ToS. Плюс найти новые компании по ICP (Wikidata).
 
-### 1.2 Границы
+### 1.2 Границы и требования челленджа (Orange Systems Data Layer)
 
-| Входит | Не входит |
-|---|---|
-| Адаптеры источников, HTTP-слой (лимиты, robots, кэш, ретраи), нормализация, резолв компании, discovery, таксономия, CLI | Сохранение в БД, дедуп между прогонами — core (по `content_hash`) |
-| Бесплатные источники и источники по бесплатному ключу (U5) | Анализ, LLM, скоринг — ai |
-| P1: Google News RSS, GLEIF, HIBP, PDF-отчёты, RSS newsroom, NewsAPI и Adzuna по ключу | Crunchbase API — платный, в 2026 бесплатного тарифа нет; в MVP — заглушка-адаптер, а CSV-выгрузку импортирует core |
-| — | LinkedIn: **никаких запросов** (S10); Indeed и Glassdoor — ToS запрещают скрейпинг |
-| — | Playwright / JS-рендеринг — P2; этап 2 |
+| Компонент | Требования ТЗ челленджа | Реализация в LeadRadar |
+|---|---|---|
+| **Web scraping / crawling** | Playwright, Scrapy или SerpAPI | HTTPX с Browser User-Agent, защитой от Cloudflare-банов (таймауты 10s), SerpAPI для обхода капчи |
+| **News & Signals** | NewsAPI, GDELT, RSSHub / Google News RSS | `google_news` (RSS, 0 лимитов), `gdelt` (DOC 2.0 API), `newsapi` (NewsAPI.org), `serpapi` (Google News search) |
+| **Job data** | Corporate career pages, public job boards | `jobs_ats` (Greenhouse, Lever, Workday, Personio, Ashby, SmartRecruiters, Workable) + `careers_html` fallback |
+| **Company data** | Crunchbase, Wikidata, registries | Wikidata SPARQL (выручка, сотрудники, LPR, LEI) + импорт CSV Crunchbase |
+| **Storage** | PostgreSQL или MongoDB | PostgreSQL 16 + pgvector (`core`, `auth`, `langgraph`) |
+| **AI / ML Layer** | LangChain / LangGraph, LLMs (Gemini/OpenAI/Claude), Scoring, Message Gen | LangGraph, Gemini Gateway с fallback, векторизация multilingual-e5, scoring с decay, Outreach Generator |
 
 ### 1.3 Функции
 
 | ID | Функция | Пр. | Проверка |
 |---|---|---|---|
 | PR-01 | Контракты (`contracts.py`) и публичный API (`__init__.py`) по §1.4 | P0 | `pytest -k contracts` |
-| PR-02 | HTTP-слой: `httpx.AsyncClient`, узнаваемый User-Agent, таймауты, ретраи с backoff (tenacity), лимит на хост (aiolimiter), robots.txt (protego), HTTP-кэш (hishel), блок-лист хостов | P0 | `pytest -k http` (robots-disallow, блок-лист, 429 → backoff) |
-| PR-03 | Адаптер `gdelt` (news): DOC 2.0 API, `ArtList`, JSON, 2 запроса (общий + по темам), глобальный лимит 1 запрос / 5 с, circuit breaker при 429; тексты статей через trafilatura, fallback — только заголовок | P0 | `pytest -k gdelt`; `lr-parser collect --sources news` |
-| PR-04 | Адаптер `website`: robots → sitemap(ы) → выбор URL по шаблонам и `lastmod` → страницы newsroom, стратегии, IR, «о компании» (+ статьи из списков newsroom, глубина 1) → trafilatura (текст, заголовок, дата) | P0 | `pytest -k website`; `--sources website` |
-| PR-05 | `resolve_company`: homepage, `own_domains`, `careers_url`, `newsroom_url`, детекция ATS, алиасы, фирмографика из Wikidata | P0 | `lr-parser resolve --domain dhl.com` |
-| PR-06 | Адаптер `jobs_ats`: Greenhouse, Lever, Workday, Personio (P0); Ashby, SmartRecruiters, Workable, Recruitee (P1). Поиск по `job_keywords`, где ATS это умеет (Workday) | P0/P1 | `pytest -k ats` (по фикстуре на каждый ATS) |
-| PR-07 | Fallback `careers_html`: ссылки и заголовки вакансий со страницы карьеры (эвристики), документы только с заголовком | P0 | `pytest -k careers_html` |
-| PR-08 | Нормализация: очистка текста, язык, `canonical_url` (без utm и якорей), `content_hash`, даты в UTC, лимиты длины | P0 | `pytest -k normalize` |
-| PR-09 | Wikidata: фирмографика по QID / домену / имени (`wbsearchentities` + SPARQL): страна, индустрии, сотрудники, выручка, LEI, Crunchbase ID, CEO | P0 | `pytest -k wikidata` |
-| PR-10 | `discover(DiscoveryQuery)`: SPARQL по ICP (страны, индустрии, размер) → `CompanyCandidate[]` с доменами | P0 | `lr-parser discover --countries DE,AT --industries logistics --min-employees 5000` |
-| PR-11 | Таксономия `data/industries.yaml` (id, label, Wikidata QID, NACE, признаки NIS2 и DORA) + `data/countries.yaml` (ISO2, QID, языки, is_eu) | P0 | `pytest -k taxonomy` |
-| PR-12 | CLI `lr-parser`: `resolve`, `collect` (→ JSONL), `discover`, `adapters` | P0 | `lr-parser --help` |
-| PR-13 | Адаптер `google_news`: RSS-поиск (EN, DE, …) → декодирование ссылок (`gnews-decoder`, пакетно) → текст статьи; не удалось — только заголовок | P1 | `pytest -k google_news` |
-| PR-14 | GLEIF: юридическое название, LEI, страна регистрации, материнская компания (резолв и дедуп) | P1 | `pytest -k gleif` |
-| PR-15 | Адаптер `hibp` (incident): каталог утечек HIBP без ключа, раз в сутки, совпадение по домену; атрибуция CC BY 4.0 | P1 | `pytest -k hibp` |
-| PR-16 | Адаптер `reports`: PDF годовых и стратегических отчётов со страниц IR → PyMuPDF → страницы с ключевыми словами ± 1 | P1 | `pytest -k reports` |
-| PR-17 | RSS newsroom: `<link rel="alternate" type="application/rss+xml">` → feedparser → статьи | P1 | `pytest -k rss` |
-| PR-18 | Адаптер `newsapi` (по `NEWSAPI_KEY`): бесплатный dev-план — 100 запросов/сутки, задержка 24 ч, только разработка | P1 | `pytest -k newsapi` |
+| PR-02 | HTTP-слой: `httpx.AsyncClient`, Browser User-Agent, таймауты 10s, ретраи с backoff, лимит на хост (aiolimiter), HTTP-кэш (hishel) | P0 | `pytest -k http` |
+| PR-03 | Адаптер `google_news`: RSS-поиск (без банов и 429), извлечение заголовков и сниппетов за 30-365 дней | P0 | `pytest -k google_news` |
+| PR-04 | Адаптер `gdelt`: DOC 2.0 API, JSON, 2 запроса, circuit breaker при 429, fallback на заголовок | P0 | `pytest -k gdelt` |
+| PR-05 | Адаптер `newsapi`: поиск по `NEWSAPI_KEY` (если задан) мировых СМИ | P0 | `pytest -k newsapi` |
+| PR-06 | Адаптер `serpapi`: поиск по `SERPAPI_KEY` новостей и обход защиты сайтов | P0 | `pytest -k serpapi` |
+| PR-07 | Адаптер `website`: robots → sitemap(ы) → выбор URL → trafilatura (текст, заголовок, дата) | P0 | `pytest -k website` |
+| PR-08 | `resolve_company`: homepage, `own_domains`, `careers_url`, детекция ATS, алиасы, фирмографика Wikidata | P0 | `lr-parser resolve --domain dhl.com` |
+| PR-09 | Адаптер `jobs_ats`: Greenhouse, Lever, Workday, Personio, Ashby, SmartRecruiters, Workable | P0 | `pytest -k ats` |
+| PR-10 | Fallback `careers_html`: вакансии со страницы карьеры (эвристики) | P0 | `pytest -k careers_html` |
+| PR-11 | Нормализация: очистка текста, язык, `canonical_url`, `content_hash`, даты в UTC | P0 | `pytest -k normalize` |
+| PR-12 | Wikidata: фирмографика по QID / домену / имени (выручка, сотрудники, CEO, LEI) | P0 | `pytest -k wikidata` |
+| PR-13 | `discover(DiscoveryQuery)`: SPARQL по ICP (страны, индустрии, размер) → кандидаты | P0 | `lr-parser discover` |
+| PR-14 | Таксономия `data/industries.yaml` + `data/countries.yaml` | P0 | `pytest -k taxonomy` |
+| PR-15 | CLI `lr-parser`: `resolve`, `collect`, `discover`, `adapters` | P0 | `lr-parser --help` |
 | PR-19 | Адаптер `adzuna` (по ключу): 25 запросов/мин, 250 в сутки; фильтр по компании и `what_or` | P1 | `pytest -k adzuna` |
 | PR-20 | Fallback на Playwright для JS-страниц, где trafilatura вернула пусто | P2 | — |
 | PR-21 | Заглушка `crunchbase` (выключена без ключа; интерфейс под этап 2) | P2 | — |

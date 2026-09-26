@@ -6,13 +6,19 @@ from .base import SourceAdapter
 from .jobs_ats import JobsAtsAdapter
 from .jobs_careers_html import CareersHtmlAdapter
 from .news_gdelt import GdeltAdapter
+from .news_google import GoogleNewsAdapter
+from .news_newsapi import NewsApiAdapter
+from .news_serpapi import SerpApiAdapter
 from .registry_wikidata import WikidataAdapter
 from .web_site import WebsiteAdapter
 
 ADAPTERS: dict[str, SourceAdapter] = {
     adapter.id: adapter
     for adapter in (
+        GoogleNewsAdapter(),
         GdeltAdapter(),
+        NewsApiAdapter(),
+        SerpApiAdapter(),
         WebsiteAdapter(),
         JobsAtsAdapter(),
         CareersHtmlAdapter(),

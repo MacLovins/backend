@@ -22,7 +22,16 @@ def test_cli_adapters_prints_json_lines() -> None:
     result = runner.invoke(app, ["adapters"])
     assert result.exit_code == 0
     rows = [json.loads(line) for line in result.output.splitlines()]
-    assert {row["id"] for row in rows} == {"gdelt", "website", "jobs_ats", "careers_html", "wikidata"}
+    assert {row["id"] for row in rows} == {
+        "google_news",
+        "gdelt",
+        "newsapi",
+        "serpapi",
+        "website",
+        "jobs_ats",
+        "careers_html",
+        "wikidata",
+    }
     assert next(row for row in rows if row["id"] == "gdelt")["rate_limit"]["per_seconds"] == 5
 
 

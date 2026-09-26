@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -10,17 +11,29 @@ class ParserSettings(BaseSettings):
 
     # NoDecode: PARSER_ADAPTERS is a comma-separated string (.env.example), not JSON.
     adapters: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["gdelt", "website", "jobs_ats", "careers_html", "wikidata"]
+        default_factory=lambda: [
+            "google_news",
+            "gdelt",
+            "website",
+            "jobs_ats",
+            "careers_html",
+            "wikidata",
+            *(["newsapi"] if os.getenv("NEWSAPI_KEY") else []),
+            *(["serpapi"] if os.getenv("SERPAPI_KEY") else []),
+        ]
     )
-    user_agent: str = "LeadRadarBot/0.1 (+https://example.invalid/bot; engineering@example.invalid)"
+    user_agent: str = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
     cache_dir: Path = Path(".cache/parser")
     cache_ttl_s: int = 86_400
     host_rps: float = 1.0
     max_concurrency: int = 8
-    request_timeout_s: float = 30.0
-    retry_attempts: int = 3
-    retry_min_wait_s: float = 1.0
-    retry_max_wait_s: float = 120.0
+    request_timeout_s: float = 10.0
+    retry_attempts: int = 2
+    retry_min_wait_s: float = 0.5
+    retry_max_wait_s: float = 15.0
 
     @field_validator("adapters", mode="before")
     @classmethod
