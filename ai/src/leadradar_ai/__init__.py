@@ -40,6 +40,7 @@ from leadradar_ai.errors import (
     QuotaExhausted,
 )
 from leadradar_ai.evals import EvalResult, load_companies, load_labels, run_eval, write_report
+from leadradar_ai.extraction import PROMPT_VERSION as EXTRACTION_PROMPT_VERSION
 from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
 from leadradar_ai.pipeline import (
     AnalysisDeps,
@@ -55,6 +56,7 @@ from leadradar_ai.scoring import derived_signals, evaluate_rules, fit_score, lea
 from leadradar_ai.settings import AISettings, LLMSettings
 
 __all__ = [
+    "EXTRACTION_PROMPT_VERSION",
     "SIGNAL_CATEGORIES",
     "AISettings",
     "AnalysisDeps",

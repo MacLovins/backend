@@ -23,6 +23,8 @@ dependencies = [
     "leadradar-parser",
     "leadradar-ai",
     "leadradar-auth",
+    "langgraph-checkpoint-postgres>=3.0",
+    "psycopg[binary,pool]>=3.2",
 ]
 
 [tool.uv.sources]

@@ -1,6 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
+import leadradar_ai as ai
 from fastapi import APIRouter, Depends, HTTPException, status
 from leadradar_auth.dependencies import get_current_principal, require_roles
 from leadradar_auth.schemas import Principal
@@ -12,6 +13,7 @@ from leadradar_core.modules.config.models import (
     Service,
     SignalQuestion,
 )
+from leadradar_core.modules.config.presets import UnknownPreset, create_service_from_preset
 from leadradar_core.modules.config.schemas import (
     DisqualificationRuleCreate,
     DisqualificationRuleOut,
@@ -28,10 +30,34 @@ from leadradar_core.modules.config.schemas import (
     SignalQuestionOut,
     SignalQuestionUpdate,
 )
+from leadradar_core.modules.intelligence.service import rescore_service
+from leadradar_core.worker.enqueue import enqueue_expand
+from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["config"])
+
+# a change of these fields changes what the question means: version + 1 and new keywords (SPEC core §1.7)
+MEANING_FIELDS = ("text", "polarity", "source_types", "recency_days", "category")
+SCORING_PARAMS = set(ai.ScoringProfile.model_fields) - {"id", "version"}
+
+
+def validate_rule(kind: str, condition: dict, action: str, cap_value: object) -> None:
+    """The AI engine's own validation, so a broken rule is rejected here instead of skipped at scoring."""
+    try:
+        ai.RuleConfig(
+            id=UUID(int=0),
+            name="check",
+            kind=kind,
+            condition=condition,
+            action=action,
+            cap_value=float(cap_value) if cap_value is not None else None,
+        )
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors(include_url=False)
+        ) from e
 
 
 # --- Services ---
@@ -117,26 +143,17 @@ async def apply_preset(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ServiceOut:
-    stmt = select(Service).where(Service.org_id == principal.org_id, Service.slug == key)
-    res = await session.execute(stmt)
-    existing = res.scalar_one_or_none()
-
-    if existing:
-        return ServiceOut.model_validate(existing)
-
-    name = key.replace("_", " ").title()
-    service = Service(
-        org_id=principal.org_id,
-        name=name,
-        slug=key,
-        description=f"Preset service for {name}",
-        value_proposition="Applied from built-in preset.",
-        decision_makers=["CIO", "COO", "Head of Digital Transformation"],
-        is_active=True,
-    )
-    session.add(service)
+    try:
+        service, created = await create_service_from_preset(session, principal.org_id, key)
+    except UnknownPreset as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown preset '{key}'") from e
     await session.commit()
     await session.refresh(service)
+    if created:
+        for q in (
+            await session.execute(select(SignalQuestion).where(SignalQuestion.service_id == service.id))
+        ).scalars():
+            await enqueue_expand(q.id)
     return ServiceOut.model_validate(service)
 
 
@@ -185,6 +202,7 @@ async def create_question(
     session.add(q)
     await session.commit()
     await session.refresh(q)
+    await enqueue_expand(q.id)
     return SignalQuestionOut.model_validate(q)
 
 
@@ -203,11 +221,22 @@ async def update_question(
     if not q or q.org_id != principal.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
 
-    for field, val in q_in.model_dump(exclude_unset=True).items():
+    changes = q_in.model_dump(exclude_unset=True)
+    meaning_changed = any(
+        field in changes and changes[field] != getattr(q, field) for field in MEANING_FIELDS
+    )
+    for field, val in changes.items():
         setattr(q, field, val)
-
+    if meaning_changed:  # stale: new keywords now, new extraction on the next analysis (fingerprint)
+        q.version += 1
+        q.keywords_status = "pending"
     await session.commit()
+    if not meaning_changed and ("weight" in changes or "is_active" in changes):
+        await rescore_service(session, principal.org_id, q.service_id)
+        await session.commit()
     await session.refresh(q)
+    if meaning_changed:
+        await enqueue_expand(q.id)
     return SignalQuestionOut.model_validate(q)
 
 
@@ -240,7 +269,10 @@ async def expand_question(
     q = await session.get(SignalQuestion, id)
     if not q or q.org_id != principal.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
-    return {"status": "enqueued", "question_id": str(id)}
+    q.keywords_status = "pending"
+    await session.commit()
+    enqueued = await enqueue_expand(id)
+    return {"status": "enqueued" if enqueued else "pending", "question_id": str(id)}
 
 
 # --- ICP ---
@@ -296,6 +328,8 @@ async def put_icp(
         session.add(icp)
 
     await session.commit()
+    await rescore_service(session, principal.org_id, id)
+    await session.commit()
     await session.refresh(icp)
     return ICPProfileOut.model_validate(icp)
 
@@ -326,6 +360,7 @@ async def create_rule(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> DisqualificationRuleOut:
+    validate_rule(rule_in.kind, rule_in.condition, rule_in.action, rule_in.cap_value)
     rule = DisqualificationRule(
         org_id=principal.org_id,
         service_id=id,
@@ -337,6 +372,8 @@ async def create_rule(
         is_active=rule_in.is_active,
     )
     session.add(rule)
+    await session.commit()
+    await rescore_service(session, principal.org_id, id)
     await session.commit()
     await session.refresh(rule)
     return DisqualificationRuleOut.model_validate(rule)
@@ -359,7 +396,10 @@ async def update_rule(
 
     for field, val in rule_in.model_dump(exclude_unset=True).items():
         setattr(rule, field, val)
+    validate_rule(rule.kind, rule.condition, rule.action, rule.cap_value)
 
+    await session.commit()
+    await rescore_service(session, principal.org_id, rule.service_id)
     await session.commit()
     await session.refresh(rule)
     return DisqualificationRuleOut.model_validate(rule)
@@ -377,7 +417,10 @@ async def delete_rule(
 ) -> None:
     rule = await session.get(DisqualificationRule, id)
     if rule and rule.org_id == principal.org_id:
+        service_id = rule.service_id
         await session.delete(rule)
+        await session.commit()
+        await rescore_service(session, principal.org_id, service_id)
         await session.commit()
 
 
@@ -415,6 +458,19 @@ async def put_scoring_profile(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RescoreResult:
+    unknown = set(profile_in.params) - SCORING_PARAMS
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown scoring parameters: {sorted(unknown)}",
+        )
+    try:
+        ai.ScoringProfile(id=UUID(int=0), version=1, **profile_in.params)
+    except ValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors(include_url=False)
+        ) from e
+
     # Set all existing profiles for this service to is_current=False
     await session.execute(
         update(ScoringProfile)
@@ -442,5 +498,6 @@ async def put_scoring_profile(
     )
     session.add(profile)
     await session.commit()
-
-    return RescoreResult(version=new_version, rescored=0, tier_changes=0, duration_ms=45)
+    result = await rescore_service(session, principal.org_id, id)
+    await session.commit()
+    return RescoreResult(version=new_version, **result)

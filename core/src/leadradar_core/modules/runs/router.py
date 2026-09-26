@@ -13,6 +13,7 @@ from leadradar_core.db.session import get_db_session
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
 from leadradar_core.modules.runs.schemas import RunCreate, RunOut
 from leadradar_core.settings import settings
+from leadradar_core.worker.enqueue import enqueue_analysis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,6 +69,7 @@ async def create_run(
     session.add(initial_event)
     await session.commit()
 
+    await enqueue_analysis(run.id, run_in.company_ids, run_in.service_ids, "incremental")
     return RunOut.model_validate(run)
 
 
@@ -129,17 +131,38 @@ async def retry_failed(
     if not run or run.org_id != principal.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
-    run.status = "pending"
+    # companies whose last outcome in this run was failed or paused (company-level events from the worker)
+    last_outcome: dict[UUID, str] = {}
+    events = await session.execute(
+        select(RunEvent.company_id, RunEvent.status)
+        .where(RunEvent.run_id == run.id, RunEvent.stage == "company")
+        .order_by(RunEvent.id.asc())
+    )
+    for company_id, outcome in events.all():
+        last_outcome[company_id] = outcome
+    retry = [c for c, outcome in last_outcome.items() if outcome in ("failed", "paused")]
+
+    progress = dict(run.progress or {})
+    for outcome in ("failed", "paused"):
+        progress[outcome] = max(
+            0, progress.get(outcome, 0) - sum(1 for c in retry if last_outcome[c] == outcome)
+        )
+    run.progress = progress
+    run.status = "running" if retry else run.status
+    run.finished_at = None if retry else run.finished_at
     retry_ev = RunEvent(
         org_id=principal.org_id,
         run_id=run.id,
         stage="run",
         status="retrying",
-        message="Retrying failed analysis tasks",
+        message=f"Retrying {len(retry)} failed or paused companies",
     )
     session.add(retry_ev)
     await session.commit()
     await session.refresh(run)
+    # same run_id + company: the graph resumes from its checkpoint; paused services continue incrementally
+    service_ids = [UUID(s) for s in (run.params or {}).get("service_ids", [])]
+    await enqueue_analysis(run.id, retry, service_ids, "incremental")
     return RunOut.model_validate(run)
 
 
@@ -175,7 +198,7 @@ async def _stream_events(
         yield ServerSentEvent(
             id=str(ev.id),
             event=event_name,
-            data=json.dumps(data_payload),
+            data=data_payload,  # FastAPI JSON-encodes data itself; a pre-encoded string came out double-encoded
         )
 
     # Check if run is already in terminal state or test environment
@@ -184,7 +207,7 @@ async def _stream_events(
         yield ServerSentEvent(
             id=str(highest_id + 1),
             event="run.finished",
-            data=json.dumps({"status": run.status if run else "finished"}),
+            data={"status": run.status if run else "finished"},
         )
         return
 
@@ -214,7 +237,7 @@ async def _stream_events(
                     yield ServerSentEvent(
                         id=str(payload.get("id", highest_id)),
                         event=event_name,
-                        data=json.dumps(payload.get("data", payload)),
+                        data=payload.get("data", payload),
                     )
                     if event_name == "run.finished":
                         break
@@ -227,7 +250,7 @@ async def _stream_events(
         yield ServerSentEvent(
             id=str(highest_id + 1),
             event="run.finished",
-            data=json.dumps({"status": "finished"}),
+            data={"status": "finished"},
         )
     finally:
         if pubsub:
