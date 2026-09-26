@@ -5,6 +5,7 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from leadradar_core.errors import ConflictException, DomainException, NotFoundException
 from leadradar_core.modules.accounts.models import Company
+from leadradar_core.modules.activity import events as domain_events
 from leadradar_core.modules.config.models import Service
 from leadradar_core.modules.runs import events
 from leadradar_core.modules.runs.models import RUN_ACTIVE_STATUSES, AnalysisRun, RunEvent
@@ -103,6 +104,7 @@ async def cancel_run(
         message="Run cancelled by user",
         payload={"status": "cancelled", **(run.progress or {})},
     )
+    domain_events.run_finished(session, org_id, run.id, "cancelled", run.progress or {})
     await session.commit()
     await events.publish(redis, row)
     return run
