@@ -1,0 +1,17 @@
+<service name="{{ service.name | attr }}">
+<description>{{ service.description }}</description>
+<value_proposition>{{ service.value_proposition or "not given" }}</value_proposition>
+</service>
+<icp countries="{{ icp.countries | join(', ') or 'any' }}" industries="{{ icp.industries | join(', ') or 'any' }}" employees_min="{{ icp.employees_min or 'any' }}" preferred_industries="{{ icp.preferred_industries | join(', ') or 'none' }}"/>
+<categories>
+{% for id, label in categories.items() %}
+{{ id }}: {{ label }}
+{% endfor %}
+</categories>
+<existing_keys>{{ existing_keys | join(', ') or 'none' }}</existing_keys>
+<existing_questions>
+{% for q in existing_questions %}
+- {{ q }}
+{% endfor %}
+</existing_questions>
+Draft the signal questions and the 2 rules for this service following the rules. Return JSON only.

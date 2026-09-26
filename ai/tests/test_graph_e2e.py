@@ -335,3 +335,39 @@ def test_build_collect_request():
     assert request.news_topics == ["agentic AI", "ransomware"]
     assert request.job_keywords == ["RPA developer"]
     assert request.max_items_per_source == 30
+
+
+def test_derived_signals_are_persisted_and_breakdown_ids_resolve():
+    """AI-16: NIS2/DORA signals go through AnalysisStore.save_extraction like extracted ones."""
+    w = World()
+    compliance = make_question(
+        key="cy_compliance",
+        text="[compliance] Is the company preparing for NIS2 or DORA?",
+        category="compliance",
+        source_types={"news"},
+        recency_days=540,
+    )
+    cyber = w.services[1]
+    w.services[1] = cyber.model_copy(update={"questions": [*cyber.questions, compliance]})
+    w.company = w.company.model_copy(update={"industry_ids": ["logistics", "banking"]})  # DE: NIS2 + DORA
+    out = w.run(w.input())
+
+    stored = asyncio.run(w.store.load_signals(w.company.id, cyber.service_id))
+    derived = [s for s in stored if s.source_type == "derived"]
+    assert {s.source_name for s in derived} == {"NIS2 scope (firmographics)", "DORA scope (firmographics)"}
+    assert all(s.flags == {"derived"} and s.question_key == "cy_compliance" for s in derived)
+
+    score = next(s for s in out["scores"] if s.service_id == cyber.service_id)
+    ids = {i for c in score.breakdown for i in c.signal_ids}
+    assert {s.id for s in derived} <= ids <= {s.id for s in stored}  # no id points nowhere
+
+    # a rerun without anything new skips extraction and keeps the same persisted ids
+    again = w.run(w.input())
+    rescored = next(s for s in again["scores"] if s.service_id == cyber.service_id)
+    assert {i for c in rescored.breakdown for i in c.signal_ids} == ids
+
+    # a firmographic change that changes the derived signals is not skipped
+    w.company = w.company.model_copy(update={"industry_ids": ["logistics"]})
+    w.run(w.input())
+    stored = asyncio.run(w.store.load_signals(w.company.id, cyber.service_id))
+    assert {s.source_name for s in stored if s.source_type == "derived"} == {"NIS2 scope (firmographics)"}

@@ -2,7 +2,14 @@ from datetime import date, timedelta
 
 import pytest
 from leadradar_ai.extraction import Answer, Evidence, ServiceExtraction
-from leadradar_ai.testing.factories import NOW, make_bundle, make_profile, make_question, make_snippet
+from leadradar_ai.testing.factories import (
+    NOW,
+    make_bundle,
+    make_company,
+    make_profile,
+    make_question,
+    make_snippet,
+)
 from leadradar_ai.verification import find_quote, normalize, verify_extraction
 
 PV = "extract_signals@v1"
@@ -238,3 +245,107 @@ def test_duplicates_are_merged_and_cap_keeps_strongest(setup):
     ]
     r = verify(bundle, snippets, {0: ("yes", evidence, 0.9)})
     assert [s.strength for s in r.signals] == ["strong", "weak"]
+
+
+# --- V3: event date against the document date -------------------------------------------------------
+
+
+def test_event_date_is_capped_by_the_document_date(setup):
+    """An event cannot happen after it was reported: min(LLM event date, published_at)."""
+    bundle, _ = setup
+    published = NOW - timedelta(days=30)
+    snippets = [make_snippet(text=TEXT, published_at=published)]
+    later = ev(event_date=(NOW - timedelta(days=5)).date())
+    assert verify(bundle, snippets, {0: ("yes", [later], 0.9)}).signals[0].event_date == published.date()
+    earlier = ev(event_date=date(2026, 3, 1))
+    assert verify(bundle, snippets, {0: ("yes", [earlier], 0.9)}).signals[0].event_date == date(2026, 3, 1)
+
+
+def test_event_date_is_never_in_the_future(setup):
+    bundle, snippets = setup
+    tomorrow = ev(event_date=(NOW + timedelta(days=1)).date())
+    assert verify(bundle, snippets, {0: ("yes", [tomorrow], 0.9)}).signals[0].event_date == NOW.date()
+    # undated document + a future event date: no date at all, flagged, recency from fetched_at
+    undated = [make_snippet(text=TEXT, published_at=None)]
+    s = verify(bundle, undated, {0: ("yes", [tomorrow], 0.9)}).signals[0]
+    assert s.event_date is None and s.flags == {"undated"} and s.fetched_at == NOW
+
+
+# --- V2: subject checked in code -------------------------------------------------------------------
+
+
+def _news(text: str, title: str = "Freight news", **overrides):
+    data = {
+        "text": text,
+        "source_type": "news",
+        "source_name": "gdelt",
+        "url": "https://news.example.com/story",
+        "title": title,
+        "char_start": 0,
+        "char_end": len(text),
+    }
+    return make_snippet(**(data | overrides))
+
+
+def verify_for(company, bundle, snippets, quote):
+    ext = extraction(bundle, {0: ("yes", [ev(quote=quote)], 0.9)})
+    return verify_extraction(ext, bundle, snippets, NOW, PV, company=company)
+
+
+def test_subject_must_be_named_near_the_quote(setup):
+    """The LLM says subject=target_company, but the company is not named near the quote → wrong_subject."""
+    bundle, _ = setup
+    dhl = make_company()
+    quote = "Acme Freight deploys agentic AI to process customer RFQs"
+    far = _news("DHL Group reported quarterly results. " + "Markets were calm. " * 30 + quote + ".")
+    r = verify_for(dhl, bundle, [far], quote)
+    assert r.signals == [] and [x.reason for x in r.rejected] == ["wrong_subject"]
+
+    near = _news("Markets were calm. " * 30 + "DHL Group said " + quote + ".")
+    assert len(verify_for(dhl, bundle, [near], quote).signals) == 1
+    by_domain = _news("Markets were calm. " * 30 + "According to dhl.com, " + quote + ".")
+    assert len(verify_for(dhl, bundle, [by_domain], quote).signals) == 1
+
+
+def test_title_names_the_subject_of_a_headline_or_lead(setup):
+    bundle, _ = setup
+    dhl = make_company()
+    quote = "deploys agentic AI to process customer RFQs"
+    lead = _news("The group " + quote + " in forwarding.", title="DHL expands agentic AI")
+    assert len(verify_for(dhl, bundle, [lead], quote).signals) == 1
+    deep = _news("Markets were calm. " * 30 + "The group " + quote + ".", title="DHL expands agentic AI")
+    assert [x.reason for x in verify_for(dhl, bundle, [deep], quote).rejected] == ["wrong_subject"]
+
+
+def test_homonyms_are_not_the_company(setup):
+    bundle, _ = setup
+    orange = make_company(name="Orange SA", aliases=["Orange"], domain="orange.com", industry_ids=["telecom"])
+    quote = "plans a moratorium on AI data centers"
+    county = _news(
+        "Orange County " + quote + " after residents protested.", title="Orange County AI moratorium"
+    )
+    assert [x.reason for x in verify_for(orange, bundle, [county], quote).rejected] == ["wrong_subject"]
+    fruit = _news("Growers say orange juice prices " + quote + ".", title="Citrus markets")
+    assert [x.reason for x in verify_for(orange, bundle, [fruit], quote).rejected] == ["wrong_subject"]
+    telco = _news("Orange " + quote + " in France.", title="Telecom news")
+    assert len(verify_for(orange, bundle, [telco], quote).signals) == 1
+
+
+def test_own_sources_need_no_mention(setup):
+    bundle, snippets = setup  # website snippet on dhl.com; the name never appears in TEXT
+    quote = "Since March 2026 agentic AI processes incoming customer RFQs"
+    assert len(verify_for(make_company(), bundle, snippets, quote).signals) == 1
+
+
+def test_find_mentions_guards():
+    from leadradar_ai.retrieval.entity import find_mentions
+
+    sap = make_company(name="SAP", aliases=["SAP SE"], domain="sap.com")
+    assert find_mentions("Rate Hike Fears Sap Risk Appetite", sap) == []  # acronyms need capitals
+    assert find_mentions("maple sap season; tickets on sale at SAP Center", sap) == []
+    assert find_mentions("SAP launches Joule agents", sap) == [(0, 3)]
+    orange = make_company(
+        name="Orange SA", aliases=["Orange"], domain="orange.com", homonyms=["Orange Marketing"]
+    )
+    assert find_mentions("Orange Marketing Wins Platinum Award", orange) == []  # configured homonym
+    assert find_mentions("Orange Marketing Wins, Orange launches AI-RAN", orange) == [(23, 29)]

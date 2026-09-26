@@ -2,18 +2,25 @@
 
 Generates tailored cold emails, LinkedIn InMail, and call scripts grounded in
 verified company signals and service value propositions.
+
+referenced_signals holds signal ids (StoredSignal.id) — never question ids. Ids come only from the signals
+passed in: ids the model returns are filtered against them. Plain VerifiedSignal inputs have no id, so
+callers should pass StoredSignal to get references.
 """
+
+from uuid import UUID
 
 from leadradar_ai.contracts import (
     CompanyProfile,
     OutreachDraft,
     OutreachRequest,
     ServiceBundle,
+    StoredSignal,
     VerifiedSignal,
 )
 from leadradar_ai.llm.types import LLMClient, LLMRequest
 
-PROMPT_VERSION = "outreach@v1"
+PROMPT_VERSION = "outreach@v2"  # v2: signal ids in the prompt, referenced_signals = signal ids
 
 SYSTEM_PROMPT = """You are an elite B2B Sales Development Representative (SDR) and Copywriter.
 Your task is to generate a highly personalized, compelling outreach message (Cold Email, LinkedIn InMail, or Call Script) to a target company.
@@ -23,7 +30,8 @@ CRITICAL RULES:
 2. Align the value proposition of the offered service directly with the detected situation.
 3. Keep the tone natural, crisp, and executive-level. Avoid generic buzzwords or hollow praise.
 4. Provide a clear, low-friction Call to Action (CTA).
-5. Output MUST match the requested OutreachDraft JSON schema exactly."""
+5. Output MUST match the requested OutreachDraft JSON schema exactly.
+6. referenced_signals: only the "Signal id" values of the signals you used (never question names)."""
 
 
 def build_outreach_prompt(
@@ -35,8 +43,10 @@ def build_outreach_prompt(
     signals_summary = []
     for s in signals:
         quote_str = f' | Quote: "{s.quote}"' if s.quote else ""
+        signal_id = f"  Signal id: {s.id}\n" if isinstance(s, StoredSignal) else ""
         signals_summary.append(
             f"- Signal Question: {s.question_key}\n"
+            f"{signal_id}"
             f"  Summary: {s.summary}\n"
             f"  Confidence: {s.confidence:.2f}{quote_str}\n"
             f"  Source: {s.source_name} ({s.url})"
@@ -63,6 +73,17 @@ def build_outreach_prompt(
         f"Sender: {request.sender_name or 'Account Executive'}, {request.sender_title or 'Growth Lead'} at {request.sender_company}\n\n"
         f"Write a high-converting {request.channel} addressing their situation."
     )
+
+
+def signal_ids(signals: list[VerifiedSignal]) -> list[UUID]:
+    return [s.id for s in signals if isinstance(s, StoredSignal)]
+
+
+def _grounded(draft: OutreachDraft, signals: list[VerifiedSignal]) -> OutreachDraft:
+    """Keep only references to the given signals; without valid ones, cite the top three."""
+    known = signal_ids(signals)
+    cited = [i for i in dict.fromkeys(draft.referenced_signals) if i in set(known)]
+    return draft.model_copy(update={"referenced_signals": cited or known[:3]})
 
 
 def fallback_draft(
@@ -101,7 +122,7 @@ def fallback_draft(
         channel=request.channel,
         subject=subject,
         body=body,
-        referenced_signals=[s.question_id for s in signals[:3]],
+        referenced_signals=signal_ids(signals[:3]),
         referenced_quotes=quotes,
         hook=hook,
         call_to_action="Brief 10-minute conversation this week",
@@ -131,7 +152,7 @@ async def generate_outreach(
     try:
         res = await llm.generate(llm_req)
         if res.output is not None:
-            return res.output
+            return _grounded(res.output, signals)
     except Exception:
         pass
 

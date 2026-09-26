@@ -32,6 +32,7 @@ from leadradar_ai.pipeline.deps import AnalysisDeps
 from leadradar_ai.pipeline.state import AnalysisState, ServiceOutcome, ServiceState
 from leadradar_ai.retrieval.chunking import chunk_document, index_text
 from leadradar_ai.retrieval.prefilter import load_window, prefilter
+from leadradar_ai.scoring.derived import derived_for_store
 from leadradar_ai.scoring.engine import score_company
 from leadradar_ai.verification.verify import verify_extraction
 
@@ -262,9 +263,18 @@ class Nodes:
     @service_node("verifying")
     async def verify(self, state: ServiceState) -> dict:
         inp, company, bundle, pre = state["input"], state["company"], state["service"], state["pre"]
-        result = verify_extraction(state["extraction"], bundle, pre.snippets, inp.now, PROMPT_VERSION)
+        result = verify_extraction(
+            state["extraction"], bundle, pre.snippets, inp.now, PROMPT_VERSION, company=company
+        )
+        # derived NIS2/DORA signals are saved with the extraction, so breakdown ids resolve to stored rows
+        derived = derived_for_store(company, bundle, inp.now)
         await self.deps.store.save_extraction(
-            inp.run_id, company.id, bundle.service_id, pre.fingerprint, result.signals, result.rejected
+            inp.run_id,
+            company.id,
+            bundle.service_id,
+            pre.fingerprint,
+            [*result.signals, *derived],
+            result.rejected,
         )
         return {
             "signals_verified": len(result.signals),

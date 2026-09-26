@@ -20,6 +20,28 @@ from leadradar_ai.ports import Embedder, ProgressSink
 from leadradar_ai.presets import load_preset
 from leadradar_ai.retrieval.prefilter import PrefilterConfig
 from leadradar_ai.testing import FakeCollector, InMemoryStore
+from leadradar_ai.verification.quotes import normalize
+
+
+class CompanyScore(BaseModel):
+    company_domain: str
+    service: str
+    priority: float
+    tier: str
+    outside_icp: bool = False
+    rules: list[str] = []  # names of the rules that fired ("IT or software vendor" for the vendor trap)
+
+
+class EvidenceCheck(BaseModel):
+    """A labelled evidence item and what became of it."""
+
+    company_domain: str
+    service: str
+    question_key: str
+    quote: str
+    expected: str  # accept | reject
+    reason: str | None = None
+    signal: bool  # a verified signal carries this quote
 
 
 class EvalResult(BaseModel):
@@ -29,6 +51,19 @@ class EvalResult(BaseModel):
     decisions: list[Decision]
     metrics: Metrics
     notes: list[str]
+    scores: list[CompanyScore] = []
+    evidence: list[EvidenceCheck] = []
+
+    @property
+    def evidence_summary(self) -> dict:
+        accept = [e for e in self.evidence if e.expected == "accept"]
+        reject = [e for e in self.evidence if e.expected == "reject"]
+        return {
+            "accept": len(accept),
+            "accept_verified": sum(e.signal for e in accept),
+            "traps": len(reject),
+            "traps_leaked": sum(e.signal for e in reject),
+        }
 
 
 class _SilentProgress:
@@ -48,7 +83,13 @@ def company_profile(case: CompanyCase) -> CompanyProfile:
         industry_ids=case.industries,
         employees=case.employees,
         tags=case.tags,
+        homonyms=case.homonyms,
     )
+
+
+def _carries(quote: str, signal_quotes: list[str]) -> bool:
+    q = normalize(quote)
+    return any(q in normalize(s) or normalize(s) in q for s in signal_quotes if s.strip())
 
 
 async def run_eval(
@@ -67,6 +108,8 @@ async def run_eval(
     fixtures_dir = Path(fixtures_dir)
     decisions: list[Decision] = []
     notes: list[str] = []
+    scores: list[CompanyScore] = []
+    evidence: list[EvidenceCheck] = []
     verified_total = 0
     rejected_by_reason: Counter[str] = Counter()
     llm_calls = 0
@@ -120,10 +163,23 @@ async def run_eval(
             for err in output.get("errors", []):
                 notes.append(f"{domain}: [{err.stage}] {err.error_type}: {err.message}")
             outcomes = {o.service_id: o for o in output.get("outcomes", [])}
+            for service_key, bundle in bundles.items():
+                o = outcomes.get(bundle.service_id)
+                if o is not None and o.score is not None:
+                    scores.append(
+                        CompanyScore(
+                            company_domain=domain,
+                            service=service_key,
+                            priority=o.score.priority,
+                            tier=o.score.tier,
+                            outside_icp=o.score.outside_icp,
+                            rules=[h["name"] for h in o.score.rule_hits],
+                        )
+                    )
             llm_calls += sum(o.llm_calls for o in outcomes.values())
             analysed += 1
             for signals in store.signals.values():
-                verified_total += len(signals)
+                verified_total += sum(s.source_type != "derived" for s in signals)
             for rejected in store.rejected.values():
                 rejected_by_reason.update(r.reason for r in rejected)
 
@@ -135,6 +191,23 @@ async def run_eval(
             done = outcome is not None and outcome.status == "done"
             predicted = outcome.final_answers.get(qid, "not_evaluated") if done else "not_evaluated"
             key = (company_profile(case).id, bundle.service_id) if case else None
+            signal_quotes = [
+                s.quote
+                for s in store.signals.get(key, [])
+                if s.question_id == q.id and s.source_type != "derived"
+            ]
+            evidence.extend(
+                EvidenceCheck(
+                    company_domain=domain,
+                    service=lbl.service,
+                    question_key=lbl.question_key,
+                    quote=item.quote,
+                    expected=item.expected,
+                    reason=item.reason,
+                    signal=_carries(item.quote, signal_quotes),
+                )
+                for item in lbl.evidence
+            )
             decisions.append(
                 Decision(
                     company_domain=domain,
@@ -145,7 +218,7 @@ async def run_eval(
                     expected=lbl.expected,
                     predicted=predicted,
                     evidence_hint=lbl.evidence_hint,
-                    quotes=[s.quote for s in store.signals.get(key, []) if s.question_id == q.id],
+                    quotes=signal_quotes,
                     rejected=dict(
                         Counter(r.reason for r in store.rejected.get(key, []) if r.question_id == q.id)
                     ),
@@ -155,5 +228,12 @@ async def run_eval(
 
     metrics = compute_metrics(decisions, verified_total, dict(rejected_by_reason), llm_calls, analysed)
     return EvalResult(
-        prompt_version=PROMPT_VERSION, mode=mode, now=now, decisions=decisions, metrics=metrics, notes=notes
+        prompt_version=PROMPT_VERSION,
+        mode=mode,
+        now=now,
+        decisions=decisions,
+        metrics=metrics,
+        notes=notes,
+        scores=scores,
+        evidence=evidence,
     )

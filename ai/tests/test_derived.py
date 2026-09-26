@@ -67,7 +67,7 @@ def test_score_includes_derived_but_real_evidence_dominates():
     compliance = next(c for c in with_derived.breakdown if c.key == "cy_compliance")
     # NIS2 weak 0.35·0.8·0.7 = 0.196, DORA moderate 0.65·0.8·0.7 = 0.364 → noisy-OR 0.489 × weight 3
     assert compliance.strength == 0.49 and compliance.points == 1.47
-    assert with_derived.intent == pytest.approx(38.7, abs=0.1)
+    assert with_derived.intent == pytest.approx(25.4, abs=0.1)  # 100 × (1 − exp(−1.4675 / 5))
     assert with_derived.tier in ("cold", "warm") and with_derived.tier != "hot"
     assert [r.source_name for r in with_derived.why_now if r.polarity == "positive"] == [
         "DORA scope (firmographics)"
