@@ -83,7 +83,7 @@ async def test_list_returns_numbers_aggregates_and_flags_in_one_query(org_id, cl
     with count_queries() as statements:
         res = await client.get("/api/v1/leads", params={"service_id": str(ids["service"])}, headers=h)
     assert res.status_code == 200, res.text
-    assert len(statements) <= 2  # count + page, no per-row queries
+    assert len(statements) <= 3  # count + page + trends of the page, no per-row queries
     items = {i["company"]["name"]: i for i in res.json()["items"]}
 
     fresh = items["Fresh Co"]

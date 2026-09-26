@@ -94,6 +94,30 @@ class TelegramAlerts:
             raise RuntimeError(f"telegram responded {res.status_code}: {res.text[:200]}")
 
 
+def smtp_configured(s: AppSettings) -> bool:
+    return bool(s.SMTP_HOST and (s.SMTP_FROM or s.SMTP_USERNAME))
+
+
+def _send_message(s: AppSettings, msg: EmailMessage) -> None:
+    with smtplib.SMTP(s.SMTP_HOST, s.SMTP_PORT, timeout=TIMEOUT_S) as smtp:
+        if s.SMTP_STARTTLS:
+            smtp.starttls()
+        if s.SMTP_USERNAME:
+            smtp.login(s.SMTP_USERNAME, s.SMTP_PASSWORD)
+        smtp.send_message(msg)
+
+
+async def send_email(s: AppSettings, to: str | list[str], subject: str, lines: list[str]) -> None:
+    """One plain-text e-mail over SMTP (blocking smtplib in a thread); shared by every e-mail channel."""
+    recipients = [to] if isinstance(to, str) else list(to)
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = s.SMTP_FROM or s.SMTP_USERNAME
+    msg["To"] = ", ".join(recipients)
+    msg.set_content("\n".join(lines))
+    await asyncio.to_thread(_send_message, s, msg)
+
+
 class EmailAlerts:
     name = "alerts.email"
     event_types = ALERT_EVENTS
@@ -102,24 +126,11 @@ class EmailAlerts:
         self._s = s
         self._to = [a.strip() for a in s.ALERTS_EMAIL_TO.split(",") if a.strip()]
 
-    def _send(self, msg: EmailMessage) -> None:
-        with smtplib.SMTP(self._s.SMTP_HOST, self._s.SMTP_PORT, timeout=TIMEOUT_S) as smtp:
-            if self._s.SMTP_STARTTLS:
-                smtp.starttls()
-            if self._s.SMTP_USERNAME:
-                smtp.login(self._s.SMTP_USERNAME, self._s.SMTP_PASSWORD)
-            smtp.send_message(msg)
-
     async def handle(self, event: Event) -> None:
         if not is_alert(event):
             return
         subject, lines = render(event, self._s.PUBLIC_ORIGIN)
-        msg = EmailMessage()
-        msg["Subject"] = f"[LeadRadar] {subject}"
-        msg["From"] = self._s.SMTP_FROM or self._s.SMTP_USERNAME
-        msg["To"] = ", ".join(self._to)
-        msg.set_content("\n".join(lines))
-        await asyncio.to_thread(self._send, msg)
+        await send_email(self._s, self._to, f"[LeadRadar] {subject}", lines)
 
 
 def alert_consumers(s: AppSettings) -> list[TelegramAlerts | EmailAlerts]:
@@ -130,7 +141,7 @@ def alert_consumers(s: AppSettings) -> list[TelegramAlerts | EmailAlerts]:
         consumers.append(TelegramAlerts(s.TELEGRAM_BOT_TOKEN, s.TELEGRAM_CHAT_ID, s.PUBLIC_ORIGIN))
     else:
         log.info("alerts_telegram_disabled", reason="APP_TELEGRAM_BOT_TOKEN or APP_TELEGRAM_CHAT_ID is empty")
-    if s.SMTP_HOST and s.ALERTS_EMAIL_TO and (s.SMTP_FROM or s.SMTP_USERNAME):
+    if smtp_configured(s) and s.ALERTS_EMAIL_TO:
         consumers.append(EmailAlerts(s))
     else:
         log.info(

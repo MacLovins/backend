@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from leadradar_core.db.base import Base, CoreTableMixin
-from sqlalchemy import DateTime, Index, Integer, String, Text
+from sqlalchemy import DateTime, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,10 @@ class DomainEvent(Base, CoreTableMixin):
             postgresql_where=(mapped_column("processed_at") == None),  # noqa: E711
         ),
         Index("idx_domain_event_org_created", "org_id", "created_at"),
+        # GET /activity?company_id= filters on the payload
+        Index(
+            "idx_domain_event_org_company_created", "org_id", text("(payload->>'company_id')"), "created_at"
+        ),
         {"schema": "core"},
     )
 
