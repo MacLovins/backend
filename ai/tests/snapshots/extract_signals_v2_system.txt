@@ -8,7 +8,9 @@ about ONE target company for ONE service line.</role>
    the industry in general, or a different company with a similar name are not evidence for "yes".
 4. If the target company SELLS such services or products (it is a vendor), that is not a buying signal.
 5. "no" = snippets show the opposite; "unclear" = indirect or insufficient evidence. Prefer "unclear" to guessing.
-6. strength: strong = explicit and specific (named program, budget, target, date, open roles, appointed person);
+6. strength is the signal temperature and must follow the <temperature> guide of the question: evidence that fits
+   cold → "weak", medium → "moderate", hot → "strong". When the evidence fits none of them, use the generic rule:
+   strong = explicit and specific (named program, budget, target, date, open roles, appointed person);
    moderate = stated plan or intent without specifics; weak = generic or marketing language.
 7. event_date: date of the event if stated, else the snippet's published date, else null.
    A future target year ("by 2030") is not an event date.
@@ -28,9 +30,15 @@ about ONE target company for ONE service line.</role>
 <snippet id="S3" source_type="news" source="logistics-news.example" published="2026-08-02" title="Nordfracht wants leaner back office">Nordfracht said it intends to make its back-office processes more efficient over the coming years, without giving targets.</snippet>
 </snippets>
 <questions>
-<question id="Q1" polarity="positive" category="ai_automation">Is the company running or planning AI, RPA, agentic AI, IDP or process mining initiatives?</question>
-<question id="Q2" polarity="positive" category="cost_efficiency">Has the company announced cost reduction or efficiency programs with targets or deadlines?</question>
-<question id="Q3" polarity="negative" category="internal_capability">Does the company have a mature in-house automation / AI centre of excellence or a large own automation team?</question>
+<question id="Q1" polarity="positive" category="ai_automation">Is the company running or planning AI, RPA, agentic AI, IDP or process mining initiatives?
+<temperature cold="Interest in AI or automation, an idea or a conference talk; nothing in operation." medium="A pilot, proof of concept or planned project in a named area." hot="A named AI, RPA, agentic AI or process mining project in production or being rolled out, or a budget for it."/>
+</question>
+<question id="Q2" polarity="positive" category="cost_efficiency">Has the company announced cost reduction or efficiency programs with targets or deadlines?
+<temperature cold="General talk about efficiency or cost discipline; no program, no numbers." medium="A cost or efficiency program is announced, but without amounts, targets or dates." hot="A named program with a savings target, amount, job cuts or a deadline (e.g. '€1bn savings by 2027')."/>
+</question>
+<question id="Q3" polarity="negative" category="internal_capability">Does the company have a mature in-house automation / AI centre of excellence or a large own automation team?
+<temperature cold="A small internal team or a few specialists." medium="A dedicated in-house team for this area." hot="A large center of excellence or own team that builds and runs such solutions."/>
+</question>
 </questions>
 Based on the snippets above, answer every question in <questions> following the rules. Return JSON only.
 </input>
@@ -97,7 +105,9 @@ Based on the snippets above, answer every question in <questions> following the 
 <snippet id="S1" source_type="news" source="tech-wire.example" published="2026-09-01" title="Automata launches RPA suite for banks">Automata Software today launched Automata Flow 5, an RPA and agentic AI platform that helps banks automate loan processing. The company expects strong demand in Europe.</snippet>
 </snippets>
 <questions>
-<question id="Q1" polarity="positive" category="ai_automation">Is the company running or planning AI, RPA, agentic AI, IDP or process mining initiatives?</question>
+<question id="Q1" polarity="positive" category="ai_automation">Is the company running or planning AI, RPA, agentic AI, IDP or process mining initiatives?
+<temperature cold="Interest in AI or automation, an idea or a conference talk; nothing in operation." medium="A pilot, proof of concept or planned project in a named area." hot="A named AI, RPA, agentic AI or process mining project in production or being rolled out, or a budget for it."/>
+</question>
 </questions>
 Based on the snippets above, answer every question in <questions> following the rules. Return JSON only.
 </input>
@@ -123,7 +133,9 @@ Based on the snippets above, answer every question in <questions> following the 
 <snippet id="S1" source_type="news" source="local-news.example" published="2026-07-14" title="Orange County hit by ransomware">Orange County officials in California confirmed a ransomware attack on the county's payroll systems. The county plans to be fully zero trust by 2030.</snippet>
 </snippets>
 <questions>
-<question id="Q1" polarity="positive" category="incident">Has the company suffered a cyber incident (ransomware, data breach, outage caused by an attack) in the last 18 months?</question>
+<question id="Q1" polarity="positive" category="incident">Has the company suffered a cyber incident (ransomware, data breach, outage caused by an attack) in the last 18 months?
+<temperature cold="An unconfirmed report, a minor outage or an incident at a supplier." medium="A confirmed incident with limited impact (e.g. phishing, a contained breach)." hot="A major attack (ransomware, data theft, outage) confirmed in the last months."/>
+</question>
 </questions>
 Based on the snippets above, answer every question in <questions> following the rules. Return JSON only.
 </input>

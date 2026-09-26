@@ -1,13 +1,14 @@
-"""Alert rules: matching events against rules, rendering notifications, delivering them, the preview and
-the jobs-postings threshold (evaluated by the scheduler, not by events).
+"""Alert rules: matching events against rules, rendering notifications, delivering them, the preview, the
+jobs-postings threshold and the e-mail digests (both evaluated by the scheduler, not by events).
 
 Delivery is channel-agnostic here: `notify()` stores the in-app row and hands e-mails to a `Mailer`
 callable that the caller provides (the SMTP path lives in integrations.alerts), so this module has no
-network code and in-app notifications work without SMTP.
+network code and in-app notifications work without SMTP. A rule with a digest frequency queues its e-mails
+(`delivered.email = "queued"`); `send_email_digests()` sends them later, one e-mail per user.
 """
 
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -33,7 +34,8 @@ from leadradar_core.modules.leads.trends import (
     lead_link,
     trend_kind,
 )
-from sqlalchemy import Text, cast, exists, func, select
+from leadradar_core.settings import settings
+from sqlalchemy import ColumnElement, Text, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from structlog import get_logger
 
@@ -45,6 +47,8 @@ PREVIEW_WINDOW = timedelta(days=30)
 PREVIEW_SAMPLE = 10
 PREVIEW_SCAN_LIMIT = 5000
 WATCH_CHANNELS = ["inapp", "email"]
+DIGEST_MAX_ITEMS = 50  # notifications listed in one digest e-mail; the rest are counted
+DIGEST_SUBJECT_NAMES = 2  # company names in the digest subject
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,17 @@ class Draft:
     url: str
     event_id: UUID | None = None
     occurred_at: datetime | None = None
+    category: str | None = None  # signal: the question's category and the signal's strength
+    strength: str | None = None
+
+
+@dataclass(frozen=True)
+class Firmographics:
+    """What a firmographic scope is matched against: the company's country, industries and size."""
+
+    country_code: str | None = None
+    industry_ids: tuple[str, ...] = ()
+    employees: int | None = None
 
 
 # --- rendering ---------------------------------------------------------------------------------
@@ -106,6 +121,8 @@ def render_signal(event: Event, public_origin: str) -> Draft:
         url=lead_url(public_origin, p["company_id"], p.get("service_id")),
         event_id=event.id,
         occurred_at=event.created_at,
+        category=p.get("category"),
+        strength=p.get("strength") if p.get("strength") in STRENGTH_RANK else None,
     )
 
 
@@ -156,7 +173,56 @@ def render_jobs(
 # --- matching ----------------------------------------------------------------------------------
 
 
-def in_scope(rule: AlertRule, company_id: str | None, service_id: str | None) -> bool:
+def _rank(strength: str | None) -> int:
+    return STRENGTH_RANK.get(strength or "", 0)
+
+
+def has_firmographic_scope(scope: dict[str, Any] | None) -> bool:
+    """The scope limits companies by country, industry or size (null or empty = any)."""
+    scope = scope or {}
+    return bool(scope.get("countries") or scope.get("industries")) or (
+        scope.get("employees_min") is not None or scope.get("employees_max") is not None
+    )
+
+
+def firmographics_match(scope: dict[str, Any], firmo: Firmographics | None) -> bool:
+    """Unknown data never matches a limit: a company without country (or size) is outside a scope that limits
+    the country (or size); without the company (`firmo` None) only a scope without such limits matches."""
+    if not has_firmographic_scope(scope):
+        return True
+    if firmo is None:
+        return False
+    countries, industries = scope.get("countries"), scope.get("industries")
+    lo, hi = scope.get("employees_min"), scope.get("employees_max")
+    if countries and (firmo.country_code or "").upper() not in countries:
+        return False
+    if industries and not set(industries) & set(firmo.industry_ids):
+        return False
+    if lo is not None or hi is not None:
+        if firmo.employees is None:
+            return False
+        if (lo is not None and firmo.employees < lo) or (hi is not None and firmo.employees > hi):
+            return False
+    return True
+
+
+def firmographic_conditions(scope: dict[str, Any]) -> list[ColumnElement[bool]]:
+    """The same firmographic scope as SQL conditions on Company (NULL country or employees match no limit)."""
+    conditions: list[ColumnElement[bool]] = []
+    if scope.get("countries"):
+        conditions.append(Company.country_code.in_(list(scope["countries"])))
+    if scope.get("industries"):
+        conditions.append(Company.industry_ids.overlap(list(scope["industries"])))
+    if scope.get("employees_min") is not None:
+        conditions.append(Company.employees >= int(scope["employees_min"]))
+    if scope.get("employees_max") is not None:
+        conditions.append(Company.employees <= int(scope["employees_max"]))
+    return conditions
+
+
+def in_scope(
+    rule: AlertRule, company_id: str | None, service_id: str | None, firmo: Firmographics | None = None
+) -> bool:
     scope = rule.scope or {}
     companies = scope.get("company_ids")
     services = scope.get("service_ids")
@@ -164,7 +230,7 @@ def in_scope(rule: AlertRule, company_id: str | None, service_id: str | None) ->
         return False
     if services is not None and service_id not in {str(s) for s in services}:
         return False
-    return True
+    return firmographics_match(scope, firmo)
 
 
 def matches_trigger(rule: AlertRule, event: Event) -> bool:
@@ -179,10 +245,13 @@ def matches_trigger(rule: AlertRule, event: Event) -> bool:
         if trigger.get("polarity") and p.get("polarity") != trigger["polarity"]:
             return False
         min_strength = trigger.get("min_strength")
-        if min_strength and STRENGTH_RANK.get(p.get("strength") or "", 0) < STRENGTH_RANK.get(
-            min_strength, 0
-        ):
+        if min_strength and _rank(p.get("strength")) < _rank(min_strength):
             return False
+        levels = trigger.get("levels")  # {signal category: minimum strength}; other categories do not fire
+        if levels:
+            level = levels.get(p.get("category") or "")
+            if level is None or _rank(p.get("strength")) < _rank(level):
+                return False
         return True
     if kind == "tier" and event.type == events.LEAD_TIER_CHANGED:
         tier_to = trigger.get("tier_to")
@@ -190,12 +259,18 @@ def matches_trigger(rule: AlertRule, event: Event) -> bool:
     return False
 
 
-def match_event(rule: AlertRule, event: Event, public_origin: str) -> Draft | None:
-    """The rendered notification when the rule fires for the event, else None."""
+def match_event(
+    rule: AlertRule, event: Event, public_origin: str, firmo: Firmographics | None = None
+) -> Draft | None:
+    """The rendered notification when the rule fires for the event, else None.
+
+    `firmo`: the event's company, needed by a rule with a firmographic scope (without it such a rule is
+    silent).
+    """
     if not rule.is_active or event.org_id != rule.org_id:
         return None
     p = event.payload
-    if not p.get("company_id") or not in_scope(rule, p.get("company_id"), p.get("service_id")):
+    if not p.get("company_id") or not in_scope(rule, p.get("company_id"), p.get("service_id"), firmo):
         return None
     if not matches_trigger(rule, event):
         return None
@@ -211,6 +286,29 @@ async def active_rules(
     if kinds is not None:
         stmt = stmt.where(AlertRule.trigger["kind"].astext.in_(list(kinds)))
     return list((await session.execute(stmt.order_by(AlertRule.created_at))).scalars().all())
+
+
+async def company_firmographics(
+    session: AsyncSession, org_id: UUID, company_ids: Iterable[Any]
+) -> dict[str, Firmographics]:
+    """{company id (str): firmographics} of the org's companies among `company_ids`, in one query."""
+    ids: set[UUID] = set()
+    for value in company_ids:
+        try:
+            ids.add(UUID(str(value)))
+        except ValueError:
+            continue
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(Company.id, Company.country_code, Company.industry_ids, Company.employees).where(
+            Company.org_id == org_id, Company.id.in_(ids)
+        )
+    )
+    return {
+        str(company_id): Firmographics(country, tuple(industries or ()), employees)
+        for company_id, country, industries, employees in rows.all()
+    }
 
 
 # --- delivery ----------------------------------------------------------------------------------
@@ -247,13 +345,18 @@ async def notify(
         service_id=draft.service_id,
         kind=draft.kind,
         trend_kind=draft.trend_kind,
+        category=draft.category,
+        strength=draft.strength,
         title=draft.title,
         body=draft.body,
         url=draft.url,
         delivered={},
     )
     if "email" in (rule.channels or []):
-        row.delivered = {"email": await _send_email(session, rule, draft, mailer)}
+        if (rule.email_frequency or "instant") == "instant":
+            row.delivered = {"email": await _send_email(session, rule, draft, mailer)}
+        else:
+            row.delivered = {"email": "queued"}  # sent with the rule's next digest (send_email_digests)
     session.add(row)
     await session.flush()
     return row
@@ -280,9 +383,14 @@ async def deliver_event(
     """All notifications of one event: every active rule of the org that matches, one row per rule."""
     if event.type not in (events.SIGNAL_DETECTED, events.LEAD_TIER_CHANGED):
         return []
+    rules = await active_rules(session, event.org_id, ("signal", "tier"))
+    firmo = None
+    if any(has_firmographic_scope(r.scope) for r in rules):  # the company is loaded only when a rule needs it
+        company_id = event.payload.get("company_id")
+        firmo = (await company_firmographics(session, event.org_id, [company_id])).get(str(company_id))
     created = []
-    for rule in await active_rules(session, event.org_id, ("signal", "tier")):
-        draft = match_event(rule, event, public_origin)
+    for rule in rules:
+        draft = match_event(rule, event, public_origin, firmo)
         if draft is None:
             continue
         row = await notify(session, rule, draft, mailer)
@@ -304,6 +412,7 @@ def rule_from_input(org_id: UUID, user_id: UUID, body: AlertRuleIn) -> AlertRule
         channels=list(body.channels),
         scope=body.scope.model_dump(mode="json"),
         trigger=body.trigger.model_dump(mode="json"),
+        email_frequency=body.email_frequency,
     )
 
 
@@ -313,6 +422,8 @@ def _preview(draft: Draft) -> NotificationPreview:
         service_id=draft.service_id,
         kind=draft.kind,
         trend_kind=draft.trend_kind,
+        category=draft.category,
+        strength=draft.strength,
         title=draft.title,
         body=draft.body,
         url=draft.url,
@@ -337,25 +448,27 @@ async def preview_rule(
         drafts = await jobs_threshold_drafts(session, rule, public_origin, now)
         return RulePreviewOut(count=len(drafts), notifications=[_preview(d) for d in drafts[:PREVIEW_SAMPLE]])
     event_type = events.SIGNAL_DETECTED if kind == "signal" else events.LEAD_TIER_CHANGED
-    rows = (
-        await session.execute(
-            select(DomainEvent)
-            .where(
-                DomainEvent.org_id == org_id,
-                DomainEvent.type == event_type,
-                DomainEvent.created_at >= now - PREVIEW_WINDOW,
-            )
-            .order_by(DomainEvent.created_at.desc())
-            .limit(PREVIEW_SCAN_LIMIT)
+    stmt = (
+        select(DomainEvent)
+        .where(
+            DomainEvent.org_id == org_id,
+            DomainEvent.type == event_type,
+            DomainEvent.created_at >= now - PREVIEW_WINDOW,
         )
-    ).scalars()
+        .order_by(DomainEvent.created_at.desc())
+        .limit(PREVIEW_SCAN_LIMIT)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    firmos: dict[str, Firmographics] = {}
+    if has_firmographic_scope(rule.scope):  # the companies of the scanned events, in one query
+        firmos = await company_firmographics(session, org_id, {r.payload.get("company_id") for r in rows})
     count = 0
     sample: list[NotificationPreview] = []
     for row in rows:
         event = Event(
             id=row.id, org_id=row.org_id, type=row.type, payload=dict(row.payload), created_at=row.created_at
         )
-        draft = match_event(rule, event, public_origin)
+        draft = match_event(rule, event, public_origin, firmos.get(str(event.payload.get("company_id"))))
         if draft is None:
             continue
         count += 1
@@ -370,7 +483,8 @@ async def preview_rule(
 async def jobs_threshold_drafts(
     session: AsyncSession, rule: AlertRule, public_origin: str, now: datetime
 ) -> list[Draft]:
-    """Companies in the rule's scope whose job postings in the window reach the threshold."""
+    """Companies in the rule's scope (firmographics included) whose job postings in the window reach the
+    threshold."""
     trigger = rule.trigger or {}
     jobs_min = int(trigger.get("jobs_min") or 1)
     window_h = int(trigger.get("jobs_window_h") or DEFAULT_JOBS_WINDOW_H)
@@ -384,6 +498,7 @@ async def jobs_threshold_drafts(
             Company.org_id == rule.org_id,
             Document.source_type == "jobs",
             Document.published_at >= now - timedelta(hours=window_h),
+            *firmographic_conditions(scope),
         )
         .group_by(Company.id)
         .having(func.count(Document.id) >= jobs_min)
@@ -435,6 +550,115 @@ async def evaluate_jobs_thresholds(
     return created
 
 
+# --- e-mail digests ----------------------------------------------------------------------------
+
+_QUEUED = Notification.delivered["email"].astext == "queued"
+
+
+def render_digest(items: Sequence[tuple[Notification, str]], public_origin: str) -> tuple[str, list[str]]:
+    """(subject, lines) of one user's digest; `items` are (notification, company name), newest first."""
+    count = len(items)
+    names = list(dict.fromkeys(name for _, name in items))
+    companies = " and ".join(names)
+    if len(names) > DIGEST_SUBJECT_NAMES:
+        companies = f"{', '.join(names[:DIGEST_SUBJECT_NAMES])} and {len(names) - DIGEST_SUBJECT_NAMES} more"
+    subject = f"[LeadRadar] {count} new signal{'' if count == 1 else 's'}: {companies}"
+    lines: list[str] = []
+    for notification, _ in items[:DIGEST_MAX_ITEMS]:
+        lines += [notification.title, notification.url, ""]
+    if count > DIGEST_MAX_ITEMS:
+        lines += [f"and {count - DIGEST_MAX_ITEMS} more", ""]
+    lines.append(f"All notifications: {public_origin.rstrip('/')}")
+    return subject, lines
+
+
+async def _send_digest(
+    session: AsyncSession,
+    user_id: UUID,
+    items: Sequence[tuple[Notification, str]],
+    public_origin: str,
+    mailer: Mailer | None,
+) -> str:
+    if mailer is None:
+        return "skipped"
+    to = await user_email(session, user_id)
+    if not to:
+        log.info("alert_digest_skipped", user_id=str(user_id), reason="no active user e-mail")
+        return "skipped"
+    subject, lines = render_digest(items, public_origin)
+    try:
+        await mailer(to, subject, lines)
+    except Exception as e:
+        log.warning("alert_digest_failed", user_id=str(user_id), error=f"{type(e).__name__}: {e}")
+        return "failed"
+    return "sent"
+
+
+async def send_email_digests(
+    session_factory: async_sessionmaker[AsyncSession],
+    public_origin: str,
+    mailer: Mailer | None,
+    *,
+    now: datetime | None = None,
+    only_org: UUID | None = None,
+) -> int:
+    """One digest run: the queued e-mails of the rules that are due — "twice_daily" at every run, "daily"
+    at the run in hour APP_ALERTS_DAILY_DIGEST_HOUR (UTC) — as one e-mail per user; returns the number of
+    e-mails sent.
+
+    Every included notification gets `delivered.email` "sent", "failed" or "skipped" (no mailer, no active
+    user e-mail). The queue of a rule that is gone, inactive or no longer e-mails is dropped ("skipped"); a
+    rule switched back to "instant" has its queue sent with the next run.
+    """
+    now = now or datetime.now(UTC)
+    daily_due = now.astimezone(UTC).hour == settings.ALERTS_DAILY_DIGEST_HOUR
+    users = select(Notification.user_id).where(_QUEUED).distinct()
+    if only_org is not None:
+        users = users.where(Notification.org_id == only_org)
+    async with session_factory() as session:
+        user_ids = list((await session.execute(users)).scalars().all())
+    sent = 0
+    for user_id in user_ids:  # a transaction per user: the rows are marked together with their e-mail
+        async with session_factory() as session, session.begin():
+            outcome = await _user_digest(session, user_id, daily_due, public_origin, mailer, only_org)
+        if outcome == "sent":
+            sent += 1
+    return sent
+
+
+async def _user_digest(
+    session: AsyncSession,
+    user_id: UUID,
+    daily_due: bool,
+    public_origin: str,
+    mailer: Mailer | None,
+    only_org: UUID | None,
+) -> str | None:
+    """The user's digest of the due queued e-mails; the delivery outcome, None when nothing is due."""
+    stmt = (
+        select(Notification, AlertRule, Company.name)
+        .join(Company, Company.id == Notification.company_id)
+        .outerjoin(AlertRule, AlertRule.id == Notification.rule_id)
+        .where(Notification.user_id == user_id, _QUEUED)
+        .order_by(Notification.created_at.desc(), Notification.id)
+        .with_for_update(of=Notification, skip_locked=True)  # a concurrent run skips these rows
+    )
+    if only_org is not None:
+        stmt = stmt.where(Notification.org_id == only_org)
+    items: list[tuple[Notification, str]] = []
+    for notification, rule, company_name in (await session.execute(stmt)).all():
+        if rule is None or not rule.is_active or "email" not in (rule.channels or []):
+            notification.delivered = {**notification.delivered, "email": "skipped"}
+        elif rule.email_frequency != "daily" or daily_due:
+            items.append((notification, company_name))
+    if not items:
+        return None
+    outcome = await _send_digest(session, user_id, items, public_origin, mailer)
+    for notification, _ in items:
+        notification.delivered = {**notification.delivered, "email": outcome}
+    return outcome
+
+
 # --- watch (one-click rule per company) --------------------------------------------------------
 
 
@@ -470,6 +694,7 @@ async def watch_company(session: AsyncSession, org_id: UUID, user_id: UUID, comp
             channels=list(WATCH_CHANNELS),
             scope={"company_ids": [str(company.id)], "service_ids": None},
             trigger={"kind": "signal"},
+            email_frequency="instant",
         )
         session.add(rule)
     rule.is_active = True

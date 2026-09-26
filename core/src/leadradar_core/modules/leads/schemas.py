@@ -65,6 +65,8 @@ class SignalItem(BaseModel):
     event_date: str | None = None
     flags: list[str] = []
     my_feedback: Literal["correct", "incorrect", "irrelevant"] | None = None
+    # the trend the signal belongs to (hiring, layoffs...); null when its category carries no trend
+    trend_kind: TrendKind | None = None
 
 
 class QuestionSignals(BaseModel):

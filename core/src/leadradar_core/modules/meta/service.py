@@ -18,6 +18,7 @@ from leadradar_core.modules.meta.schemas import (
     LabelsOut,
     ModelUsageOut,
     PresetOut,
+    TemperatureDefaultOut,
     UsageOut,
 )
 from pydantic import BaseModel
@@ -102,6 +103,11 @@ def presets() -> list[PresetOut]:
             )
         )
     return out
+
+
+@cache
+def temperature_defaults() -> list[TemperatureDefaultOut]:
+    return [TemperatureDefaultOut(category=c, **guide) for c, guide in ai.DEFAULT_TEMPERATURE.items()]
 
 
 @cache

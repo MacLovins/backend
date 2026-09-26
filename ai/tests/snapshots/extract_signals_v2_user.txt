@@ -1,0 +1,15 @@
+<company>DHL Group · dhl.com · aliases: Deutsche Post DHL · country: DE · industries: logistics · employees: 590000</company>
+<service>Intelligent Automation: RPA, IDP, agentic AI and process mining</service>
+<snippets>
+<snippet id="S1" source_type="website" source="website" published="2026-09-25" title="Strategy 2030">Since March 2026 agentic AI processes incoming customer RFQs in freight forwarding.</snippet>
+<snippet id="S2" source_type="news" source="gdelt" published="unknown" title="CEO says 'AI first' strategy">DHL Group CEO said AI will change how the group works.</snippet>
+</snippets>
+<questions>
+<question id="Q1" polarity="positive" category="ai_automation">Is the company running or planning AI, RPA, agentic AI or process mining initiatives?
+<temperature cold="Interest in AI or automation, an idea or a conference talk; nothing in operation." medium="A pilot, proof of concept or planned project in a named area." hot="A named AI, RPA, agentic AI or process mining project in production or being rolled out, or a budget for it."/>
+</question>
+<question id="Q2" polarity="negative" category="internal_capability">Does the company have a large in-house automation team?
+<temperature cold="A small internal team or a few specialists." medium="A dedicated in-house team for this area." hot="A large center of excellence or own team that builds and runs such solutions."/>
+</question>
+</questions>
+Based on the snippets above, answer every question in <questions> following the rules. Return JSON only.

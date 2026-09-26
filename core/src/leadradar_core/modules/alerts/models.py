@@ -1,7 +1,8 @@
 """User-defined alert rules and the in-app notifications they produce.
 
-alert_rule     what a user wants to hear about: a scope (companies, services) and a trigger (signal kinds, tier
-               changes, a jobs-postings threshold); channels in-app and/or e-mail.
+alert_rule     what a user wants to hear about: a scope (companies, services, market, industry, company
+               size) and a trigger (signal kinds and per-category temperature, tier changes, a jobs-postings
+               threshold); channels in-app and/or e-mail, e-mails one by one or bundled into a digest.
 notification   one delivered match: rendered title, body and deep link; `delivered` records the e-mail outcome.
 """
 
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 CHANNELS = ("inapp", "email")
 TRIGGER_KINDS = ("signal", "tier", "jobs_threshold")
+EMAIL_FREQUENCIES = ("instant", "twice_daily", "daily")
 
 
 class AlertRule(Base, CoreTableMixin):
@@ -34,11 +36,16 @@ class AlertRule(Base, CoreTableMixin):
     channels: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=lambda: ["inapp"], server_default="{inapp}", nullable=False
     )
-    # {"company_ids": [uuid] | null, "service_ids": [uuid] | null}; null = all
+    # {"company_ids": [uuid] | null, "service_ids": [uuid] | null, "countries", "industries", "employees_min",
+    #  "employees_max"}; null = all
     scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
-    # {"kind": "signal" | "tier" | "jobs_threshold", "categories", "polarity", "min_strength", "tier_to",
-    #  "jobs_min", "jobs_window_h"}
+    # {"kind": "signal" | "tier" | "jobs_threshold", "categories", "polarity", "min_strength", "levels",
+    #  "tier_to", "jobs_min", "jobs_window_h"}
     trigger: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
+    # EMAIL_FREQUENCIES: "instant" e-mails each notification, the others queue it for the digest
+    email_frequency: Mapped[str] = mapped_column(
+        String(16), default="instant", server_default="instant", nullable=False
+    )
 
 
 class Notification(Base, CoreTableMixin):
@@ -70,11 +77,14 @@ class Notification(Base, CoreTableMixin):
     )
     kind: Mapped[str] = mapped_column(String(32), nullable=False)  # TRIGGER_KINDS
     trend_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # signal notifications: the signal's category and strength (weak / moderate / strong); null otherwise
+    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    strength: Mapped[str | None] = mapped_column(String(16), nullable=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # {"email": "sent" | "failed" | "skipped"}
+    # {"email": "sent" | "failed" | "skipped" | "queued"}; queued: waits for the rule's digest
     delivered: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default="{}", nullable=False
     )

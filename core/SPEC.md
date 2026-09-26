@@ -75,7 +75,7 @@
 |---|---|---|---|
 | `POST /auth/login` · `POST /auth/logout` · `GET /auth/me` | — / любой | Из пакета auth (см. его SPEC) | P0 |
 | `GET/POST /auth/users` · `PATCH /auth/users/{id}` | admin | Управление пользователями | P1 |
-| `GET /meta/industries` · `/meta/countries` · `/meta/presets` · `/meta/labels` | любой | Справочники для UI | P0 |
+| `GET /meta/industries` · `/meta/countries` · `/meta/presets` · `/meta/labels` · `/meta/temperature` | любой | Справочники для UI (`temperature` — что значит cold / medium / hot по категориям) | P0 |
 | `GET /meta/usage` | любой | Квоты LLM и объёмы сбора | P1 |
 | `GET/POST /services` · `GET/PATCH /services/{id}` | чтение — любой, запись — admin | Услуги | P0 |
 | `POST /presets/{key}/apply` | admin | Создать услугу из пресета (идемпотентно по slug) | P0 |
@@ -93,7 +93,7 @@
 | `GET\|POST /runs/{id}/events` | любой | SSE-поток прогона | P0 |
 | `POST /runs/{id}/cancel` · `POST /runs/{id}/retry-failed` | любой | Управление прогоном (409 для завершённого прогона; worker останавливает граф между стадиями) | P0 |
 | `POST /leads/{company_id}/outreach` → 202 · `GET /leads/{company_id}/outreach/{job_id}` | любой | Черновик outreach (CO-A1): задача worker `generate_outreach`, результат — опросом | После ядра |
-| `GET /leads?service_id=&tier=&country=&industry=&min_priority=&has_new=&q=&sort=&page=&page_size=` | любой | Рейтинг | P0 |
+| `GET /leads?service_id=&tier=&country=&industry=&min_priority=&has_new=&q=&trend=&trend_min_strength=&watched=&sort=&page=&page_size=` | любой | Рейтинг (`trend` — виды трендов, `trend_min_strength` — минимальная температура сигнала, `watched` — компании, за которыми следит пользователь) | P0 |
 | `GET /leads/{company_id}?service_id=` | любой | Карточка лида | P0 |
 | `GET /leads/export.csv?service_id=&…` | любой | CSV-экспорт | P1 |
 | `POST/DELETE /signals/{id}/feedback` · `POST /leads/{company_id}/feedback` | любой | Оценки (upsert: один голос на пользователя и цель; DELETE отзывает голос; ответ содержит пересчитанный score) | P0 / P1 |

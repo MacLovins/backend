@@ -128,6 +128,7 @@ def question_config(q: SignalQuestion) -> ai.QuestionConfig:
         keywords=dict(q.keywords or {}),
         job_titles=list(q.job_titles or []),
         negative_terms=list(q.negative_terms or []),
+        temperature=dict(q.temperature or {}),
     )
 
 

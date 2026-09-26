@@ -516,6 +516,47 @@
         ]
       }
     },
+    "/api/v1/meta/temperature": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Get Temperature Defaults",
+        "description": "Signal temperature per category: what cold (weak), medium (moderate) and hot (strong) evidence is.",
+        "operationId": "get_temperature_defaults_api_v1_meta_temperature_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemperatureDefaultOut"
+                  },
+                  "type": "array",
+                  "title": "Response Get Temperature Defaults Api V1 Meta Temperature Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/meta/labels": {
       "get": {
         "tags": [
@@ -2693,6 +2734,68 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "name": "trend",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more trend kinds (repeat or comma-separate)",
+              "title": "Trend"
+            },
+            "description": "One or more trend kinds (repeat or comma-separate)"
+          },
+          {
+            "name": "trend_min_strength",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "weak",
+                    "moderate",
+                    "strong"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong",
+              "title": "Trend Min Strength"
+            },
+            "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong"
+          },
+          {
+            "name": "watched",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true: only companies the current user watches, false: only the others",
+              "title": "Watched"
+            },
+            "description": "true: only companies the current user watches, false: only the others"
           }
         ],
         "responses": {
@@ -2926,6 +3029,68 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "name": "trend",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more trend kinds (repeat or comma-separate)",
+              "title": "Trend"
+            },
+            "description": "One or more trend kinds (repeat or comma-separate)"
+          },
+          {
+            "name": "trend_min_strength",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "weak",
+                    "moderate",
+                    "strong"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong",
+              "title": "Trend Min Strength"
+            },
+            "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong"
+          },
+          {
+            "name": "watched",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true: only companies the current user watches, false: only the others",
+              "title": "Watched"
+            },
+            "description": "true: only companies the current user watches, false: only the others"
           }
         ],
         "responses": {
@@ -4098,6 +4263,16 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/RuleTrigger"
+          },
+          "email_frequency": {
+            "type": "string",
+            "enum": [
+              "instant",
+              "twice_daily",
+              "daily"
+            ],
+            "title": "Email Frequency",
+            "default": "instant"
           }
         },
         "additionalProperties": false,
@@ -4144,6 +4319,16 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/RuleTrigger"
+          },
+          "email_frequency": {
+            "type": "string",
+            "enum": [
+              "instant",
+              "twice_daily",
+              "daily"
+            ],
+            "title": "Email Frequency",
+            "default": "instant"
           },
           "created_at": {
             "type": "string",
@@ -4234,6 +4419,22 @@
                 "type": "null"
               }
             ]
+          },
+          "email_frequency": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "instant",
+                  "twice_daily",
+                  "daily"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Frequency"
           }
         },
         "additionalProperties": false,
@@ -6882,6 +7083,33 @@
             ],
             "title": "Trend Kind"
           },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weak",
+                  "moderate",
+                  "strong"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
+          },
           "title": {
             "type": "string",
             "title": "Title"
@@ -6983,6 +7211,33 @@
               }
             ],
             "title": "Trend Kind"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "strength": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "weak",
+                  "moderate",
+                  "strong"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strength"
           },
           "title": {
             "type": "string",
@@ -7568,6 +7823,58 @@
               }
             ],
             "title": "Service Ids"
+          },
+          "countries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countries"
+          },
+          "industries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industries"
+          },
+          "employees_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees Min"
+          },
+          "employees_max": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees Max"
           }
         },
         "additionalProperties": false,
@@ -7640,6 +7947,43 @@
               }
             ],
             "title": "Min Strength"
+          },
+          "levels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "weak",
+                    "moderate",
+                    "strong"
+                  ]
+                },
+                "propertyNames": {
+                  "enum": [
+                    "cost_efficiency",
+                    "digital_transformation",
+                    "ai_automation",
+                    "hiring",
+                    "leadership_change",
+                    "shared_services",
+                    "tech_stack",
+                    "tech_partners",
+                    "incident",
+                    "compliance",
+                    "investment",
+                    "expansion",
+                    "internal_capability",
+                    "distress"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Levels"
           },
           "tier_to": {
             "anyOf": [
@@ -8221,6 +8565,28 @@
               }
             ],
             "title": "My Feedback"
+          },
+          "trend_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "hiring",
+                  "layoffs",
+                  "cost_cutting",
+                  "cyber_incident",
+                  "leadership_change",
+                  "growth",
+                  "ai_automation",
+                  "compliance",
+                  "distress"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Kind"
           }
         },
         "type": "object",
@@ -8316,6 +8682,16 @@
             "type": "array",
             "title": "Negative Terms",
             "default": []
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemperatureGuide"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -8399,6 +8775,16 @@
             },
             "type": "array",
             "title": "Negative Terms"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemperatureGuide"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "keywords_status": {
             "type": "string",
@@ -8566,6 +8952,16 @@
             ],
             "title": "Negative Terms"
           },
+          "temperature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TemperatureGuide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "is_active": {
             "anyOf": [
               {
@@ -8723,6 +9119,66 @@
           "cap_value"
         ],
         "title": "SuggestedRuleOut"
+      },
+      "TemperatureDefaultOut": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "weak": {
+            "type": "string",
+            "title": "Weak"
+          },
+          "moderate": {
+            "type": "string",
+            "title": "Moderate"
+          },
+          "strong": {
+            "type": "string",
+            "title": "Strong"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "weak",
+          "moderate",
+          "strong"
+        ],
+        "title": "TemperatureDefaultOut",
+        "description": "The default signal temperature guide of a category: cold, medium and hot are strength weak / moderate /\nstrong (a question may have its own guide)."
+      },
+      "TemperatureGuide": {
+        "properties": {
+          "weak": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Weak"
+          },
+          "moderate": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Moderate"
+          },
+          "strong": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Strong"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "weak",
+          "moderate",
+          "strong"
+        ],
+        "title": "TemperatureGuide",
+        "description": "What cold, medium and hot evidence means for a question: signal strength weak / moderate / strong."
       },
       "TokenResponse": {
         "properties": {

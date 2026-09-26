@@ -10,8 +10,10 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from _lead_fixtures import ensure_service, headers, seed_lead
-from leadradar_core.db.session import engine
+from leadradar_core.db.session import async_session_factory, engine
 from leadradar_core.main import create_app
+from leadradar_core.modules.intelligence.models import Signal
+from leadradar_core.modules.intelligence.service import rescore_company
 from leadradar_core.settings import settings
 from sqlalchemy import event
 
@@ -156,6 +158,98 @@ async def test_csv_export_respects_list_filters(org_id, client):
         "/api/v1/leads/export.csv", params={"service_id": str(ids["service"]), "q": "old"}, headers=h
     )
     assert [r["Company Name"] for r in csv.DictReader(io.StringIO(q.text))] == ["Old Co"]
+
+
+async def test_trend_filters_match_active_signals_of_the_same_lead(org_id, client):
+    ia = await ensure_service(org_id, "intelligent_automation")
+    cyber = await ensure_service(org_id, "cybersecurity")
+
+    async def lead(name: str, key: str, quote: str, strength: str = "strong"):
+        return await seed_lead(org_id, service_id=ia, name=name, signals=((key, quote),), strength=strength)
+
+    hiring = await lead("Hiring Co", "ia_hiring", "12 RPA jobs")
+    await lead("Cuts Co", "ia_distress", "Announces layoffs of 500 roles", "moderate")  # distress → layoffs
+    await lead("Cost Co", "ia_cost", "Talks about cost discipline", "weak")
+    await lead("Stack Co", "ia_erp", "Runs SAP S/4HANA")  # tech_stack carries no trend
+    stale = await lead("Stale Co", "ia_hiring", "Hired RPA devs")
+    async with async_session_factory() as session, session.begin():
+        (await session.get(Signal, stale.signal_ids[0])).status = "superseded"
+        await rescore_company(session, org_id, hiring.company_id, cyber)  # the same company, no cyber signals
+    h = headers(org_id, "sales")
+
+    async def leads(params) -> list[tuple[str, str]]:
+        res = await client.get("/api/v1/leads", params=params, headers=h)
+        assert res.status_code == 200, res.text
+        return [(i["company"]["name"], i["service_id"]) for i in res.json()["items"]]
+
+    assert await leads({"trend": "hiring"}) == [("Hiring Co", str(ia))]  # not the cyber lead, not superseded
+    assert sorted(n for n, _ in await leads({"trend": "hiring,layoffs"})) == ["Cuts Co", "Hiring Co"]
+    assert sorted(n for n, _ in await leads([("trend", "hiring"), ("trend", "cost_cutting")])) == [
+        "Cost Co",
+        "Hiring Co",
+    ]
+    assert await leads({"trend": "distress"}) == []  # Cuts Co's distress evidence is about layoffs
+    with count_queries() as statements:
+        at_least_medium = await leads({"trend_min_strength": "moderate", "service_id": str(ia)})
+    assert len(statements) <= 3  # the filter is part of the list query
+    assert sorted(n for n, _ in at_least_medium) == ["Cuts Co", "Hiring Co"]  # any trend kind, not Stack Co
+    assert await leads({"trend": "hiring,cost_cutting", "trend_min_strength": "strong"}) == [
+        ("Hiring Co", str(ia))
+    ]
+    assert [n for n, _ in await leads({"trend": "cost_cutting", "trend_min_strength": "weak"})] == ["Cost Co"]
+
+    unknown = await client.get("/api/v1/leads", params={"trend": "hiring,rocket_launch"}, headers=h)
+    assert unknown.status_code == 422
+    error = unknown.json()["error"]
+    assert error["code"] == "validation_error" and "rocket_launch" in error["message"]
+    bad_strength = await client.get("/api/v1/leads", params={"trend_min_strength": "hot"}, headers=h)
+    assert bad_strength.status_code == 422
+
+
+async def test_watched_filter_and_export_honour_the_new_filters(org_id, client):
+    ia = await ensure_service(org_id)
+    watched = await seed_lead(org_id, service_id=ia, name="Watched Co", signals=(("ia_hiring", "RPA jobs"),))
+    await seed_lead(org_id, service_id=ia, name="Other Co", signals=(("ia_hiring", "RPA jobs"),))
+    await seed_lead(org_id, service_id=ia, name="Quiet Co", signals=())
+    user = uuid4()
+    h = headers(org_id, "sales", user)
+    assert (await client.post(f"/api/v1/companies/{watched.company_id}/watch", headers=h)).status_code == 200
+
+    async def names(path, params, auth=h) -> list[str]:
+        res = await client.get(f"/api/v1/leads{path}", params=params, headers=auth)
+        assert res.status_code == 200, res.text
+        if path:
+            return sorted(r["Company Name"] for r in csv.DictReader(io.StringIO(res.text)))
+        return sorted(i["company"]["name"] for i in res.json()["items"])
+
+    assert await names("", {"watched": "true"}) == ["Watched Co"]
+    assert await names("", {"watched": "false"}) == ["Other Co", "Quiet Co"]
+    assert await names("", {"watched": "true"}, headers(org_id, "sales", uuid4())) == []  # per user
+    assert await names("/export.csv", {"watched": "true"}) == ["Watched Co"]
+    assert await names("/export.csv", {"watched": "false", "trend": "hiring"}) == ["Other Co"]
+    assert await names("/export.csv", {"trend": "hiring", "trend_min_strength": "strong"}) == [
+        "Other Co",
+        "Watched Co",
+    ]
+    assert await names("/export.csv", {"trend": "layoffs"}) == []
+    unknown = await client.get("/api/v1/leads/export.csv", params={"trend": "moonshot"}, headers=h)
+    assert unknown.status_code == 422
+
+
+async def test_card_signals_carry_their_trend_kind(org_id, client):
+    seeded = await seed_lead(
+        org_id,
+        signals=(
+            ("ia_distress", "Acme announces layoffs in Q3"),
+            ("ia_hiring", "Hiring RPA developers"),
+            ("ia_erp", "Runs SAP S/4HANA"),
+        ),
+    )
+    card = (await client.get(f"/api/v1/leads/{seeded.company_id}", headers=headers(org_id, "sales"))).json()
+    kinds = {
+        g["question"]["key"]: [s["trend_kind"] for s in g["signals"]] for g in card["signals_by_question"]
+    }
+    assert kinds == {"ia_distress": ["layoffs"], "ia_hiring": ["hiring"], "ia_erp": [None]}
 
 
 async def test_card_defaults_to_best_service_and_filters_history(org_id, client):

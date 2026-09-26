@@ -416,6 +416,11 @@ class ExtractionOutput(BaseModel):
 Правила версионирования: любая правка промпта или примеров → новая версия (`v2`), `PROMPT_VERSION` меняется,
 кэш и fingerprint инвалидируются, evals перезапускаются. Версия пишется в каждый сигнал.
 
+**`extract_signals@v2`** (текущая): в каждом `<question>` после текста — строка
+`<temperature cold="…" medium="…" hot="…"/>`: гайд категории (`temperature.py`, `DEFAULT_TEMPERATURE`) или
+собственный гайд вопроса (`QuestionConfig.temperature`). Правило 6: `strength` — это температура сигнала по гайду
+вопроса (cold → `weak`, medium → `moderate`, hot → `strong`); общее правило выше — запасной вариант.
+
 #### 1.7.4 Верификация (P13) — решает код, а не LLM
 
 | Шаг | Правило | Иначе |

@@ -52,7 +52,7 @@ def _run_db(fn):
     return asyncio.run(main())
 
 
-@pytest.mark.parametrize("path", ["industries", "countries", "presets", "labels", "usage"])
+@pytest.mark.parametrize("path", ["industries", "countries", "presets", "labels", "usage", "temperature"])
 def test_meta_requires_auth(client: TestClient, path: str) -> None:
     res = client.get(f"/api/v1/meta/{path}")
     assert res.status_code == 401
@@ -85,6 +85,17 @@ def test_meta_presets(client: TestClient, auth_headers: dict[str, str]) -> None:
     assert set(data) == set(ai.list_presets())
     assert data["intelligent_automation"]["name"] == ai.load_preset("intelligent_automation").name
     assert data["cybersecurity"]["questions_count"] > 0
+
+
+def test_meta_temperature_defaults_per_category(client: TestClient, auth_headers: dict[str, str]) -> None:
+    res = client.get("/api/v1/meta/temperature", headers=auth_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert [t["category"] for t in data] == list(ai.SIGNAL_CATEGORIES)  # every category, in label order
+    hiring = next(t for t in data if t["category"] == "hiring")
+    assert hiring == {"category": "hiring", **ai.DEFAULT_TEMPERATURE["hiring"]}
+    assert hiring["strong"].startswith("10 or more relevant openings")  # hot: a hiring drive
+    assert all(t["weak"] and t["moderate"] and t["strong"] for t in data)
 
 
 def test_meta_labels_from_ai(client: TestClient, auth_headers: dict[str, str]) -> None:

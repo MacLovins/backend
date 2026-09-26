@@ -6,7 +6,7 @@ stable uuid5 ids for the CLI, evals and tests.
 
 from functools import cache
 from importlib import resources
-from typing import Any, Self
+from typing import Annotated, Any, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import yaml
@@ -21,8 +21,10 @@ from leadradar_ai.contracts import (
     ScoringProfile,
     ServiceBundle,
     SourceType,
+    Strength,
     Weight,
 )
+from leadradar_ai.temperature import TEMPERATURE_NAMES
 
 # ARCHITECTURE §3.3 — categories are data, but a preset must use known ones (UI labels exist for them)
 SIGNAL_CATEGORIES = {
@@ -55,11 +57,20 @@ class PresetQuestion(Contract):
     keywords_seed: dict[str, list[str]] = Field(default_factory=dict)  # expand_question starts from these
     job_titles: list[str] = Field(default_factory=list)
     negative_terms: list[str] = Field(default_factory=list)
+    # own cold / medium / hot guide (weak / moderate / strong); empty = the category default. Core stores it
+    # on the question, where a guide text is at most 300 characters.
+    temperature: dict[Strength, Annotated[str, Field(max_length=300)]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _known_category(self) -> Self:
         if self.category not in SIGNAL_CATEGORIES:
             raise ValueError(f"unknown category '{self.category}'")
+        return self
+
+    @model_validator(mode="after")
+    def _complete_temperature(self) -> Self:
+        if self.temperature and not all(self.temperature.get(level) for level in TEMPERATURE_NAMES):
+            raise ValueError("temperature needs weak, moderate and strong")
         return self
 
 

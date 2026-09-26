@@ -26,6 +26,16 @@ class PresetOut(BaseModel):
     categories: list[str] = []
 
 
+class TemperatureDefaultOut(BaseModel):
+    """The default signal temperature guide of a category: cold, medium and hot are strength weak / moderate /
+    strong (a question may have its own guide)."""
+
+    category: str
+    weak: str  # cold
+    moderate: str  # medium
+    strong: str  # hot
+
+
 class LabelsOut(BaseModel):
     categories: dict[str, str]
     weights: dict[str, str]

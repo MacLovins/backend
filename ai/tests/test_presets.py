@@ -194,6 +194,10 @@ def _preset_dict(**overrides):
     return data | overrides
 
 
+def _with_temperature(**guide):
+    return {"questions": [_preset_dict()["questions"][0] | {"temperature": guide}]}
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -220,8 +224,20 @@ def _preset_dict(**overrides):
         {"scoring": {"tiers": {"hot": 10, "warm": 50}}},
         {"questions": [_preset_dict()["questions"][0] | {"category": "astrology"}]},
         {"questions": [_preset_dict()["questions"][0]] * 2},
+        _with_temperature(weak="w", strong="s"),  # incomplete
+        _with_temperature(cold="c", medium="m", hot="h"),  # the API names are weak / moderate / strong
+        _with_temperature(weak="w" * 301, moderate="m", strong="s"),  # longer than a question guide may be
+        _with_temperature(weak="", moderate="m", strong="s"),
     ],
 )
 def test_invalid_presets_are_rejected(overrides):
     with pytest.raises(ValidationError):
         Preset.model_validate(_preset_dict(**overrides))
+
+
+def test_preset_question_temperature_flows_into_the_bundle():
+    guide = {"weak": "One RPA job ad.", "moderate": "A few RPA roles.", "strong": "An RPA team of 20."}
+    question = _preset_dict()["questions"][0] | {"temperature": guide}
+    [own] = Preset.model_validate(_preset_dict(questions=[question])).to_bundle().questions
+    [default] = Preset.model_validate(_preset_dict()).to_bundle().questions
+    assert own.temperature == guide and default.temperature == {}  # empty: the category default

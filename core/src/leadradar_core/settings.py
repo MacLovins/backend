@@ -42,6 +42,10 @@ class AppSettings(BaseSettings):
     RESUME_PAUSED_CRON: str = "*/15 * * * *"
     DISPATCH_EVENTS_CRON: str = "* * * * *"
     JOBS_ALERTS_CRON: str = "0 * * * *"  # jobs_threshold alert rules are evaluated hourly
+    # e-mail digests of alert rules (UTC): email_frequency twice_daily goes out at every run, daily only at
+    # the run in ALERTS_DAILY_DIGEST_HOUR (keep that hour in the cron)
+    ALERTS_DIGEST_CRON: str = "0 7,15 * * *"
+    ALERTS_DAILY_DIGEST_HOUR: int = 7
     REFRESH_MIN_AGE_H: float = 5  # tracked companies analyzed more recently are skipped by refresh_tracked
     EVENTS_DISPATCH_BATCH: int = 100
     EVENTS_MAX_ATTEMPTS: int = 5  # after that a failing event is marked processed with last_error

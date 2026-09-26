@@ -38,8 +38,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(tags=["config"])
 
-# a change of these fields changes what the question means: version + 1 and new keywords (SPEC core §1.7)
-MEANING_FIELDS = ("text", "polarity", "source_types", "recency_days", "category")
+# a change of these fields changes what the question means: version + 1 and new keywords (SPEC core §1.7);
+# the version is part of the extraction fingerprint, so a new temperature guide re-grades the evidence
+MEANING_FIELDS = ("text", "polarity", "source_types", "recency_days", "category", "temperature")
 SCORING_PARAMS = set(ai.ScoringProfile.model_fields) - {"id", "version"}
 
 
@@ -78,6 +79,7 @@ def validate_question(q: SignalQuestion) -> None:
             weight=q.weight,
             source_types=set(q.source_types or []),
             recency_days=q.recency_days,
+            temperature=q.temperature or {},
         )
     except ValidationError as e:
         raise _unprocessable(e) from e
@@ -245,6 +247,7 @@ async def create_question(
         recency_days=q_in.recency_days,
         job_titles=q_in.job_titles,
         negative_terms=q_in.negative_terms,
+        temperature=q_in.temperature.model_dump() if q_in.temperature else None,
         keywords_status="pending",
         version=1,
         is_active=True,

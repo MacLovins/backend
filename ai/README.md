@@ -48,7 +48,8 @@ src/leadradar_ai/
 ├── llm/                 # GeminiClient: пулы main/cheap, лимитер RPM/RPD, 429/5xx, починка JSON, кэш, учёт
 ├── retrieval/           # нарезка, e5-эмбеддинги, BM25 + косинус → RRF, фильтр сущности, бюджет, fingerprint
 ├── prompts/<имя>/<версия>/  system.md · user.jinja · examples.json
-├── extraction/          # extract_signals@v1: один вызов на услугу
+├── extraction/          # extract_signals@v2: один вызов на услугу
+├── temperature.py       # температура сигнала: что значит cold / medium / hot (strength) в каждой категории
 ├── verification/        # V1–V4: цитата, субъект, свежесть, согласованность
 ├── scoring/             # fit, правила, decay, noisy-OR, why_now, производные NIS2/DORA
 ├── pipeline/            # граф LangGraph

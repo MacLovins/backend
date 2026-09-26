@@ -90,6 +90,7 @@ async def seed_lead(
     detected_days_ago: float = 0,
     event_date: date | None = None,
     source_type: str = "news",
+    strength: str = "strong",
 ) -> Seeded:
     """Company + document + active signals (question key, quote) + a current lead score."""
     service_id = service_id or await ensure_service(org_id)
@@ -129,7 +130,7 @@ async def seed_lead(
         rows = []
         for key, quote in signals:
             row = mapping.signal_row(
-                verified_signal(questions[key], document, quote, event_date=event_date),
+                verified_signal(questions[key], document, quote, strength=strength, event_date=event_date),
                 company.id,
                 service_id,
                 org_id,
