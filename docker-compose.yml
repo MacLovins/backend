@@ -11,6 +11,7 @@ x-app: &app
   env_file: .env
   environment: &app-env
     APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-leadradar}:${POSTGRES_PASSWORD:-leadradar}@postgres:5432/${POSTGRES_DB:-leadradar}
+    APP_LANGGRAPH_DB_URL: postgresql://${POSTGRES_USER:-leadradar}:${POSTGRES_PASSWORD:-leadradar}@postgres:5432/${POSTGRES_DB:-leadradar}
     APP_REDIS_URL: redis://redis:6379/0
     # analysis and outreach run only in the worker service, never inside the api process
     APP_EMBEDDED_WORKER: "false"
@@ -76,7 +77,7 @@ services:
     <<: *app
     container_name: leadradar-worker
     restart: unless-stopped
-    command: ["taskiq", "worker", "leadradar_core.worker.broker:broker", "--workers", "1", "--max-async-tasks", "3"]
+    command: ["taskiq", "worker", "leadradar_core.worker.broker:broker", "--workers", "1", "--max-async-tasks", "${APP_WORKER_MAX_ASYNC_TASKS:-3}"]
     volumes:
       - worker-cache:/app/.cache
 

@@ -3234,6 +3234,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Outreach is disabled (APP_FEATURE_OUTREACH)"
           }
         }
       }
