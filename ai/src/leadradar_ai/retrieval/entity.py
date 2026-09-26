@@ -6,10 +6,13 @@ registries and incident records pass without the check.
 import re
 from urllib.parse import urlsplit
 
+from unidecode import unidecode
+
 from leadradar_ai.contracts import CompanyProfile, Snippet
 from leadradar_ai.retrieval.text import fold
 
 CONTEXT_CHARS = 300
+QUOTE_CONTEXT_CHARS = 250  # V2: the company must be named this close to the quote itself
 _LEGAL_SUFFIXES = re.compile(
     r"\s+(group|holding|holdings|ag|se|sa|s\.a\.|nv|n\.v\.|plc|gmbh|inc|inc\.|ltd|ltd\.|llc|corp|corporation|"
     r"company|co\.|spa|s\.p\.a\.|oyj|asa|ab)$",
@@ -57,3 +60,26 @@ def passes_entity_filter(
         return True
     pattern = pattern or mention_pattern(company)
     return bool(pattern.search(fold(snippet.title or "")) or pattern.search(fold(context)))
+
+
+def exact_mention_pattern(company: CompanyProfile) -> re.Pattern[str]:
+    """Case-sensitive (accents folded): "Orange" the operator, not "orange" the fruit; ALL-CAPS and the
+    company's domain also count."""
+    alternatives: set[str] = {company.domain.lower().removeprefix("www.")}
+    for v in name_variants(company):
+        v = unidecode(v)
+        alternatives |= {v, v.upper()}
+    ordered = sorted((re.escape(a) for a in alternatives if a), key=len, reverse=True)
+    return re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(ordered) + r")(?![A-Za-z0-9])")
+
+
+def mentioned_near_quote(snippet: Snippet, start: int, end: int, company: CompanyProfile) -> bool:
+    """V2 in code: an own/trusted source, or the company named in the title or within QUOTE_CONTEXT_CHARS of
+    the quote (offsets are in snippet.text; for a headline quote pass start = end = 0)."""
+    if is_own_source(snippet, company):
+        return True
+    pattern = exact_mention_pattern(company)
+    if snippet.title and pattern.search(unidecode(snippet.title)):
+        return True
+    window = snippet.text[max(0, start - QUOTE_CONTEXT_CHARS) : end + QUOTE_CONTEXT_CHARS]
+    return bool(pattern.search(unidecode(window)))

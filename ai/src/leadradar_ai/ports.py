@@ -74,6 +74,13 @@ class AnalysisStore(Protocol):
         """Active signals only (rejected_by_user and superseded are excluded)."""
         ...
 
+    async def sync_derived(
+        self, company_id: UUID, service_id: UUID, signals: list[StoredSignal]
+    ) -> list[StoredSignal]:
+        """Persist the currently derivable NIS2/DORA signals (deterministic ids): insert missing ones, retire
+        stored derived ones not in the list. Returns them as stored — with the status a user may have set."""
+        ...
+
     async def save_score(self, run_id: UUID | None, score: LeadScore) -> ScoreChange: ...
 
 

@@ -32,6 +32,7 @@ from leadradar_ai.pipeline.deps import AnalysisDeps
 from leadradar_ai.pipeline.state import AnalysisState, ServiceOutcome, ServiceState
 from leadradar_ai.retrieval.chunking import chunk_document, index_text
 from leadradar_ai.retrieval.prefilter import load_window, prefilter
+from leadradar_ai.scoring.derived import derived_signals
 from leadradar_ai.scoring.engine import score_company
 from leadradar_ai.verification.verify import verify_extraction
 
@@ -262,7 +263,9 @@ class Nodes:
     @service_node("verifying")
     async def verify(self, state: ServiceState) -> dict:
         inp, company, bundle, pre = state["input"], state["company"], state["service"], state["pre"]
-        result = verify_extraction(state["extraction"], bundle, pre.snippets, inp.now, PROMPT_VERSION)
+        result = verify_extraction(
+            state["extraction"], bundle, pre.snippets, inp.now, PROMPT_VERSION, company=company
+        )
         await self.deps.store.save_extraction(
             inp.run_id, company.id, bundle.service_id, pre.fingerprint, result.signals, result.rejected
         )
@@ -276,8 +279,13 @@ class Nodes:
     @service_node("scoring")
     async def score(self, state: ServiceState) -> dict:
         inp, company, bundle = state["input"], state["company"], state["service"]
-        signals = await self.deps.store.load_signals(company.id, bundle.service_id)
-        score = score_company(company, bundle, signals, inp.now)
+        stored = await self.deps.store.load_signals(company.id, bundle.service_id)
+        # NIS2/DORA signals are persisted so the card shows them and a user can reject them
+        derived = await self.deps.store.sync_derived(
+            company.id, bundle.service_id, derived_signals(company, bundle, inp.now)
+        )
+        signals = [s for s in stored if "derived" not in s.flags] + derived
+        score = score_company(company, bundle, signals, inp.now, include_derived=False)
         change = await self.deps.store.save_score(inp.run_id, score)
         extraction = state.get("extraction")
         outcome = ServiceOutcome(

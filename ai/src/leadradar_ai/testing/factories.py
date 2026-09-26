@@ -1,6 +1,7 @@
 """Factories with sensible defaults for tests: override only what the test is about."""
 
 from datetime import UTC, date, datetime
+from itertools import count
 from uuid import UUID, uuid4
 
 from leadradar_ai.contracts import (
@@ -70,6 +71,18 @@ def make_bundle(
     return ServiceBundle(**(data | overrides))
 
 
+# Distinct stories by default: identical quotes would be collapsed as reprints of one story (V5)
+_QUOTES = [
+    "We use agentic AI to process customer RFQs.",
+    "The group opened a shared service centre in Krakow last spring.",
+    "Our new CIO will lead the digital transformation programme.",
+    "Hiring: Senior RPA Developer for finance operations in Bonn.",
+    "Capital markets day outlined a two billion euro efficiency target.",
+    "Process mining rollout covers procurement and accounts payable.",
+]
+_quote_counter = count()
+
+
 def make_signal(question: QuestionConfig, **overrides) -> StoredSignal:
     data = {
         "id": uuid4(),
@@ -84,7 +97,7 @@ def make_signal(question: QuestionConfig, **overrides) -> StoredSignal:
         "url": "https://www.dhl.com/strategy-2030",
         "source_type": "website",
         "source_name": "website",
-        "quote": "We use agentic AI to process customer RFQs.",
+        "quote": _QUOTES[next(_quote_counter) % len(_QUOTES)],
         "quote_start": 0,
         "quote_end": 43,
         "summary": "Uses agentic AI to process customer RFQs.",

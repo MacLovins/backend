@@ -453,3 +453,24 @@ def test_fake_llm_queue_handler_blocked_and_errors():
 def test_gemini_client_implements_llm_client():
     client, *_ = make_client({})
     assert isinstance(client, LLMClient)
+
+
+# --- provider pools -----------------------------------------------------------------------------
+
+
+def test_gemini_pools_keep_the_fallback_that_answered_live(monkeypatch):
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    s = LLMSettings(_env_file=None, GEMINI_API_KEY="k")
+    assert s.resolved_provider == "gemini"
+    assert s.pool("main") == ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+
+
+def test_other_providers_get_their_own_models_instead_of_gemini_names(monkeypatch):
+    for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    groq = LLMSettings(_env_file=None, GROQ_API_KEY="k")
+    assert groq.resolved_provider == "groq"
+    assert groq.pool("main")[0].startswith("llama") and groq.pool("cheap")[0].startswith("llama")
+    custom = LLMSettings(_env_file=None, GROQ_API_KEY="k", main_models="my-model")
+    assert custom.pool("main") == ["my-model"]  # explicit pools are respected

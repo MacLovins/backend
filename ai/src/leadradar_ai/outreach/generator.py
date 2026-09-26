@@ -4,6 +4,10 @@ Generates tailored cold emails, LinkedIn InMail, and call scripts grounded in
 verified company signals and service value propositions.
 """
 
+import asyncio
+
+import structlog
+
 from leadradar_ai.contracts import (
     CompanyProfile,
     OutreachDraft,
@@ -14,6 +18,8 @@ from leadradar_ai.contracts import (
 from leadradar_ai.llm.types import LLMClient, LLMRequest
 
 PROMPT_VERSION = "outreach@v1"
+
+log = structlog.get_logger(__name__)
 
 SYSTEM_PROMPT = """You are an elite B2B Sales Development Representative (SDR) and Copywriter.
 Your task is to generate a highly personalized, compelling outreach message (Cold Email, LinkedIn InMail, or Call Script) to a target company.
@@ -115,7 +121,11 @@ async def generate_outreach(
     service: ServiceBundle,
     signals: list[VerifiedSignal],
     request: OutreachRequest | None = None,
+    *,
+    timeout_s: float | None = 25.0,
 ) -> OutreachDraft:
+    """Called inside an HTTP request: bounded by timeout_s (model fallbacks and retries included); on timeout
+    or any LLM failure the deterministic template draft is returned instead."""
     request = request or OutreachRequest()
     prompt = build_outreach_prompt(company, service, signals, request)
 
@@ -129,10 +139,11 @@ async def generate_outreach(
     )
 
     try:
-        res = await llm.generate(llm_req)
+        async with asyncio.timeout(timeout_s):
+            res = await llm.generate(llm_req)
         if res.output is not None:
             return res.output
-    except Exception:
-        pass
+    except Exception as e:  # TimeoutError, quota, provider errors: the template is a usable draft
+        log.warning("outreach_llm_fallback", error=str(e) or type(e).__name__)
 
     return fallback_draft(company, service, signals, request)

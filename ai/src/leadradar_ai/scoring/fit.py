@@ -1,8 +1,9 @@
 """Fit of a company to the ICP (SPEC §1.7.5).
 
 Must-have (ICPConfig fields): a known failing value → Fit = 0; an unknown value passes and becomes a data gap.
-Nice-to-have (Criterion): Fit = 100 × Σ weights of matched / Σ weights; unknown counts as half + data gap;
-no nice-to-have → 100.
+Nice-to-have (Criterion): Fit = floor + (100 − floor) × Σ weights of matched / Σ weights; unknown counts as
+half + data gap; no nice-to-have → 100. The floor (ICPConfig.nice_to_have_floor, default 40) keeps nice-to-have
+a ranking factor: a company that passes every must-have but matches no nice-to-have is a weaker fit, not Fit 0.
 """
 
 from collections.abc import Callable
@@ -139,7 +140,8 @@ def fit_score(company: CompanyProfile, icp: ICPConfig) -> FitResult:
     elif total == 0:
         fit = 100.0
     else:
-        fit = 100.0 * matched / total
+        floor = icp.nice_to_have_floor
+        fit = floor + (100.0 - floor) * matched / total
     return FitResult(fit=fit, must_have_passed=passed, details=details, data_gaps=gaps)
 
 

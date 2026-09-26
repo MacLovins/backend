@@ -40,12 +40,17 @@ def rule(kind: str, condition: dict, action: str = "exclude", cap_value: float |
 # --- evidence value -------------------------------------------------------------------------------
 
 
-def test_decay_halves_at_half_life_and_ignores_undated_and_registry():
+def test_decay_halves_at_half_life_penalises_undated_and_ignores_registry():
     profile, q = make_profile(), make_question()
     assert decay_factor(make_signal(q, source_type="jobs", event_date=days_ago(45)), profile, NOW) == 0.5
     assert decay_factor(make_signal(q, source_type="news", event_date=days_ago(240)), profile, NOW) == 0.25
     assert decay_factor(make_signal(q, source_type="registry", event_date=days_ago(999)), profile, NOW) == 1.0
-    assert decay_factor(make_signal(q, event_date=None, published_at=None), profile, NOW) == 1.0
+    # undated evidence from a dated source must not stay fresh forever
+    assert decay_factor(make_signal(q, event_date=None, published_at=None), profile, NOW) == 0.5
+    assert (
+        decay_factor(make_signal(q, event_date=None, published_at=None), make_profile(undated_decay=0.2), NOW)
+        == 0.2
+    )
     # future event date (a target year slipped through) is clamped to age 0
     assert decay_factor(make_signal(q, source_type="news", event_date=days_ago(-30)), profile, NOW) == 1.0
     # event_date wins over published_at; published_at is the fallback
@@ -83,13 +88,39 @@ def test_aggregation_helpers():
 
 
 def test_dhl_breakdown_from_spec():
-    # SPEC §1.7.5 example: points 2.49 + 1.22 + 1.32 positive, 0.96 negative, fit 92.
-    # The spec prints priority 69.2, but the formula gives 69.149 → 69.1 (intent and risk match exactly).
+    # SPEC §1.7.5 example: points 2.49 + 1.22 + 1.32 positive, 0.96 negative, fit 92 (τ_intent 5, b 0.8):
+    # intent = 100 × (1 − e^(−5.03/5)) = 63.4 · risk = 100 × (1 − e^(−0.48)) = 38.1
+    # priority = 100 × 0.92^0.4 × 0.634^0.8 × (1 − 0.5 × 0.381) = 54.4
     profile = make_profile()
     intent, risk = saturate(2.49 + 1.22 + 1.32, profile.tau_intent), saturate(0.96, profile.tau_risk)
-    assert round(intent, 1) == 81.3
+    assert round(intent, 1) == 63.4
     assert round(risk, 1) == 38.1
-    assert round(combine_priority(92.0, intent, risk, profile), 1) == 69.1
+    assert round(combine_priority(92.0, intent, risk, profile), 1) == 54.4
+
+
+def test_weight_change_moves_priority_and_can_change_tier():
+    # One strong high question and a strong second one: Hot. Hiring from high to low: Warm.
+    q_ai, q_hiring = make_question(key="ia_ai_projects"), make_question(key="ia_hiring", category="hiring")
+    bundle = make_bundle(questions=[q_ai, q_hiring])
+    signals = [make_signal(q_ai), make_signal(q_hiring)]
+    high = score_company(make_company(), bundle, signals, NOW)
+    low_bundle = bundle.model_copy(
+        update={"questions": [q_ai, q_hiring.model_copy(update={"weight": "low"})]}
+    )
+    low = score_company(make_company(), low_bundle, signals, NOW)
+    assert (high.tier, low.tier) == ("hot", "warm")
+    assert high.priority - low.priority >= 10
+
+
+def test_one_question_alone_is_never_hot():
+    q = make_question()
+    bundle = make_bundle(questions=[q], scoring=make_profile(tiers={"hot": 30, "warm": 10}))
+    score = score_company(make_company(), bundle, [make_signal(q)], NOW)
+    assert score.priority >= 30 and score.tier == "warm"
+    no_rule = bundle.model_copy(
+        update={"scoring": make_profile(tiers={"hot": 30, "warm": 10}, hot_min_questions=1)}
+    )
+    assert score_company(make_company(), no_rule, [make_signal(q)], NOW).tier == "hot"
 
 
 # --- score_company: golden scenario ---------------------------------------------------------------
@@ -152,15 +183,15 @@ def test_golden_scenario(ia):
     company = make_company(revenue_eur=None)
     score = score_company(company, bundle, signals, NOW)
 
-    # fit: industry matched (2) + revenue unknown (0.5 × 1) out of 3 → 83.3
-    assert score.fit == 83.3
-    # intent: 100 × (1 − exp(−(3 + 0.85952 + 1.215) / 3)) = 81.58
-    assert score.intent == 81.6
+    # fit: industry matched (2) + revenue unknown (0.5 × 1) out of 3 → 40 + 60 × 0.8333 = 90
+    assert score.fit == 90.0
+    # intent: 100 × (1 − exp(−(3 + 0.85952 + 1.215) / 5)) = 63.76
+    assert score.intent == 63.8
     # risk: 100 × (1 − exp(−0.65 / 2)) = 27.75
     assert score.risk == 27.7
-    # priority: 100 × 0.8333^0.4 × 0.8158^0.6 × (1 − 0.5 × 0.2775) = 70.86
-    assert score.priority == 70.9
-    assert score.tier == "hot"
+    # priority: 100 × 0.9^0.4 × 0.6376^0.8 × (1 − 0.5 × 0.2775) = 57.6
+    assert score.priority == 57.6
+    assert score.tier == "warm"  # only ia_ai_projects has s_q ≥ 0.5: one strong question is not Hot
     assert not score.disqualified
 
     points = {c.key: (c.strength, c.points) for c in score.breakdown}
@@ -208,14 +239,28 @@ def test_signal_filters(ia):
     assert score_company(company, bundle, signals + noise, NOW) == base
 
 
-def test_one_event_repeated_counts_at_most_three_times():
+def test_distinct_stories_count_at_most_three_times():
     q = make_question()
     bundle = make_bundle(questions=[q])
     weak = {"source_type": "news", "strength": "weak"}  # v = 0.35 × 0.8 = 0.28
     three = score_company(make_company(), bundle, [make_signal(q, **weak) for _ in range(3)], NOW)
-    ten = score_company(make_company(), bundle, [make_signal(q, **weak) for _ in range(10)], NOW)
-    assert ten.breakdown[0].strength == three.breakdown[0].strength == round(1 - 0.72**3, 2)
-    assert len(ten.breakdown[0].signal_ids) == 3
+    six = score_company(make_company(), bundle, [make_signal(q, **weak) for _ in range(6)], NOW)
+    assert six.breakdown[0].strength == three.breakdown[0].strength == round(1 - 0.72**3, 2)
+    assert len(six.breakdown[0].signal_ids) == 3
+
+
+def test_reprints_of_one_story_count_once():
+    q = make_question()
+    bundle = make_bundle(questions=[q])
+    quote = "DHL Group launches agentic AI assistant for customs brokerage across Europe"
+    reprints = [
+        make_signal(q, source_type="news", strength="weak", quote=quote),
+        make_signal(q, source_type="news", strength="weak", quote=quote.replace("launches", "rolls out")),
+        make_signal(q, source_type="news", strength="weak", quote=quote + "."),
+    ]
+    score = score_company(make_company(), bundle, reprints, NOW)
+    assert score.breakdown[0].strength == 0.28
+    assert len(score.breakdown[0].signal_ids) == 1
 
 
 # --- properties ---------------------------------------------------------------------------------
@@ -299,14 +344,15 @@ def test_exclude_cap_and_flag_rules(ia):
 
     flagged = bundle.model_copy(update={"rules": [rule("list", {"domains": ["www.DHL.com"]}, action="flag")]})
     score = score_company(make_company(), flagged, signals, NOW)
-    assert score.priority == 70.9 and score.tier == "hot"
+    assert score.priority == score_company(make_company(), bundle, signals, NOW).priority
     assert [h["action"] for h in score.rule_hits] == ["flag"]
 
 
 def test_profile_change_rescales_without_new_signals(ia):
     bundle, signals = ia
+    assert score_company(make_company(), bundle, signals, NOW).tier == "warm"
     strict = bundle.model_copy(update={"scoring": make_profile(tiers={"hot": 80, "warm": 60})})
-    assert score_company(make_company(), strict, signals, NOW).tier == "warm"
+    assert score_company(make_company(), strict, signals, NOW).tier == "cold"
     low_hiring = bundle.model_copy(
         update={
             "questions": [
@@ -375,8 +421,13 @@ def test_fit_nice_to_have_weights():
             Criterion(kind="tag_in", values=["priority"], weight=1),
         ]
     )
-    # country matches (3), employees 590k out of range (0), no tag (0) → 60
-    assert fit_score(make_company(), icp).fit == 60.0
+    # country matches (3), employees 590k out of range (0), no tag (0) → 40 + 60 × 3/5 = 76
+    assert fit_score(make_company(), icp).fit == 76.0
+    # nothing matches: the floor, not 0 — nice-to-have ranks, must-have excludes
+    assert fit_score(make_company(country_code="FR"), icp).fit == 40.0
+    assert (
+        fit_score(make_company(country_code="FR"), icp.model_copy(update={"nice_to_have_floor": 0})).fit == 0
+    )
     assert fit_score(make_company(tags=["priority"], employees=5000), icp).fit == 100.0
     assert fit_score(make_company(), ICPConfig()).fit == 100.0
 

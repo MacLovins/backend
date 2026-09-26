@@ -88,6 +88,7 @@ class InMemoryStore:
         self.signals: dict[tuple[UUID, UUID], list[StoredSignal]] = defaultdict(list)
         self.superseded: dict[tuple[UUID, UUID], list[StoredSignal]] = defaultdict(list)
         self.rejected: dict[tuple[UUID, UUID], list[RejectedEvidence]] = defaultdict(list)
+        self.derived: dict[tuple[UUID, UUID], dict[UUID, StoredSignal]] = defaultdict(dict)
         self.scores: dict[tuple[UUID, UUID], LeadScore] = {}
         self.score_history: list[LeadScore] = []
         self.extraction_runs: list[UUID] = []
@@ -162,6 +163,14 @@ class InMemoryStore:
 
     async def load_signals(self, company_id: UUID, service_id: UUID) -> list[StoredSignal]:
         return [s for s in self.signals[(company_id, service_id)] if s.status == "active"]
+
+    async def sync_derived(
+        self, company_id: UUID, service_id: UUID, signals: list[StoredSignal]
+    ) -> list[StoredSignal]:
+        stored = self.derived[(company_id, service_id)]
+        current = {s.id: stored.get(s.id, s) for s in signals}
+        self.derived[(company_id, service_id)] = current
+        return list(current.values())
 
     async def save_score(self, run_id: UUID | None, score: LeadScore) -> ScoreChange:
         key = (score.company_id, score.service_id)

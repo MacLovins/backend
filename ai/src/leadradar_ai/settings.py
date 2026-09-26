@@ -19,6 +19,10 @@ def _split_csv(value: object) -> object:
     return value
 
 
+_DEFAULT_MAIN = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+_DEFAULT_CHEAP = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+
+
 class LLMSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env", extra="ignore")
 
@@ -40,8 +44,8 @@ class LLMSettings(BaseSettings):
     )
 
     # Order = fallback order. Defaults are from the spec — verify availability in AI Studio.
-    main_models: Annotated[list[str], NoDecode] = ["gemini-3.8-flash", "gemini-3.5-flash"]
-    cheap_models: Annotated[list[str], NoDecode] = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+    main_models: Annotated[list[str], NoDecode] = _DEFAULT_MAIN
+    cheap_models: Annotated[list[str], NoDecode] = _DEFAULT_CHEAP
     limits_json: dict[str, ModelLimits] = {}  # model → {"rpm": 10, "rpd": 250}; missing model = no limit
     timeout_s: float = Field(default=90, gt=0)
     max_input_tokens: int = Field(default=30_000, gt=0)
@@ -67,9 +71,10 @@ class LLMSettings(BaseSettings):
 
     def pool(self, name: str) -> list[str]:
         p = self.resolved_provider
-        # If user left default Gemini models but configured OpenAI / Groq / Anthropic, provide fitting defaults
-        is_default_models = self.main_models == ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-        if is_default_models:
+        # Gemini model names are meaningless to OpenAI / Groq / Anthropic: when the pools were left at their
+        # Gemini defaults, those providers get fitting models of their own
+        is_default_models = self.main_models == _DEFAULT_MAIN and self.cheap_models == _DEFAULT_CHEAP
+        if is_default_models and p != "gemini":
             if p == "openai":
                 return ["gpt-4o", "gpt-4o-mini"] if name == "main" else ["gpt-4o-mini"]
             if p in ("groq", "llama"):

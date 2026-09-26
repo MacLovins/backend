@@ -93,6 +93,8 @@ class ICPConfig(Contract):
     employees_max: int | None = Field(default=None, ge=0)
     revenue_min_eur: int | None = Field(default=None, ge=0)
     nice_to_have: list[Criterion] = []
+    # Fit when no nice-to-have matches (must-haves passed): nice-to-have ranks companies, it does not exclude
+    nice_to_have_floor: float = Field(default=40, ge=0, le=100)
 
     @model_validator(mode="after")
     def _employees_range(self) -> Self:
@@ -178,12 +180,17 @@ class ScoringProfile(Contract):
         "registry": None,
         "derived": None,
     }
-    tau_intent: float = Field(default=3.0, gt=0)
+    tau_intent: float = Field(default=5.0, gt=0)
     tau_risk: float = Field(default=2.0, gt=0)
     fit_exponent: float = Field(default=0.4, ge=0)
-    intent_exponent: float = Field(default=0.6, ge=0)
+    intent_exponent: float = Field(default=0.8, ge=0)
     risk_penalty: float = Field(default=0.5, ge=0, le=1)
     tiers: dict[str, float] = {"hot": 65, "warm": 40}
+    # Hot needs this many independent positive questions with strength ≥ hot_min_strength, else it stays Warm
+    hot_min_questions: int = Field(default=2, ge=0)
+    hot_min_strength: float = Field(default=0.5, ge=0, le=1)
+    # Decay factor of a dated-source signal without any date (its age is unknown, so it must not stay fresh)
+    undated_decay: float = Field(default=0.5, ge=0, le=1)
     min_confidence: float = Field(default=0.5, ge=0, le=1)
     max_evidence_per_question: int = Field(default=3, ge=1)
 

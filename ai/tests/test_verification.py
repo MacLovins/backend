@@ -2,7 +2,14 @@ from datetime import date, timedelta
 
 import pytest
 from leadradar_ai.extraction import Answer, Evidence, ServiceExtraction
-from leadradar_ai.testing.factories import NOW, make_bundle, make_profile, make_question, make_snippet
+from leadradar_ai.testing.factories import (
+    NOW,
+    make_bundle,
+    make_company,
+    make_profile,
+    make_question,
+    make_snippet,
+)
 from leadradar_ai.verification import find_quote, normalize, verify_extraction
 
 PV = "extract_signals@v1"
@@ -105,8 +112,8 @@ def setup():
     return bundle, [snippet]
 
 
-def verify(bundle, snippets, answers):
-    return verify_extraction(extraction(bundle, answers), bundle, snippets, NOW, PV)
+def verify(bundle, snippets, answers, company=None):
+    return verify_extraction(extraction(bundle, answers), bundle, snippets, NOW, PV, company=company)
 
 
 def test_valid_evidence_becomes_a_signal_with_document_offsets(setup):
@@ -198,6 +205,52 @@ def test_future_event_date_falls_back_to_published(setup):
     assert r.signals[0].event_date == NOW.date()
 
 
+def test_llm_date_cannot_be_later_than_the_article(setup):
+    # an old article with an invented fresh date: capped by published_at, so it is stale, not fresh
+    bundle, _ = setup
+    old = [make_snippet(text=TEXT, published_at=NOW - timedelta(days=500))]
+    r = verify(bundle, old, {0: ("yes", [ev(event_date=NOW.date())], 0.9)})
+    assert r.signals == [] and [x.reason for x in r.rejected] == ["stale"]
+    # an earlier event reported later keeps its own (older) date
+    recent = [make_snippet(text=TEXT, published_at=NOW - timedelta(days=10))]
+    r = verify(bundle, recent, {0: ("yes", [ev(event_date=date(2026, 3, 1))], 0.9)})
+    assert r.signals[0].event_date == date(2026, 3, 1)
+
+
+def test_third_party_quote_needs_the_company_named_near_it(setup):
+    bundle, _ = setup
+    company = make_company(name="Orange", domain="orange.com", aliases=[])
+    fruit = "Citrus markets: orange prices rose 12% after the frost, and juice makers raised their forecasts."
+    operator = "Orange said on Monday that agentic AI now handles 30% of customer care requests in France."
+    snippets = [
+        make_snippet(
+            id="S1", text=fruit, source_type="news", url="https://news.example.com/a", title="Markets"
+        ),
+        make_snippet(
+            id="S2", text=operator, source_type="news", url="https://news.example.com/b", title="Tech"
+        ),
+    ]
+    answers = {
+        0: (
+            "yes",
+            [
+                ev(snippet_id="S1", quote="orange prices rose 12% after the frost"),
+                ev(snippet_id="S2", quote="agentic AI now handles 30% of customer care requests"),
+            ],
+            0.9,
+        )
+    }
+    r = verify(bundle, snippets, answers, company=company)
+    assert [s.quote for s in r.signals] == ["agentic AI now handles 30% of customer care requests"]
+    assert [x.reason for x in r.rejected] == ["wrong_subject"]
+    # the company's own site needs no mention
+    own = [make_snippet(id="S1", text=fruit, url="https://www.orange.com/en/news")]
+    r = verify(
+        bundle, own, {0: ("yes", [ev(quote="orange prices rose 12% after the frost")], 0.9)}, company=company
+    )
+    assert len(r.signals) == 1
+
+
 def test_undated_snippet_uses_fetched_at_and_is_flagged(setup):
     bundle, _ = setup
     undated = [make_snippet(text=TEXT, published_at=None)]
@@ -228,13 +281,33 @@ def test_quote_from_title_and_headline_only_documents(setup):
     assert s.flags == {"headline_only"} and s.reliability == 0.6
 
 
-def test_duplicates_are_merged_and_cap_keeps_strongest(setup):
+def test_one_document_is_one_story_and_the_strongest_quote_wins(setup):
     bundle, snippets = setup
-    bundle = bundle.model_copy(update={"scoring": make_profile(max_evidence_per_question=2)})
     evidence = [
         ev(strength="weak", quote="Under Strategy 2030 we are scaling AI across the Group"),
         ev(),
-        ev(),  # duplicate: without merging the result would be ["strong", "strong"]
+        ev(),
+    ]
+    r = verify(bundle, snippets, {0: ("yes", evidence, 0.9)})
+    assert [s.strength for s in r.signals] == ["strong"]
+    assert "corroborated" in r.signals[0].flags
+
+
+def test_reprints_collapse_and_cap_keeps_strongest_stories(setup):
+    bundle, _ = setup
+    bundle = bundle.model_copy(update={"scoring": make_profile(max_evidence_per_question=2)})
+    reprint = "DHL Group rolls out agentic AI for customer RFQs in freight forwarding"
+    other = "DHL Group opens a shared service centre for finance operations in Krakow"
+    snippets = [
+        make_snippet(id="S1", text=reprint, source_type="news"),
+        make_snippet(id="S2", text=reprint + ".", source_type="news"),
+        make_snippet(id="S3", text=other, source_type="news"),
+    ]
+    evidence = [
+        ev(snippet_id="S1", quote=reprint),
+        ev(snippet_id="S2", quote=reprint),
+        ev(snippet_id="S3", quote=other, strength="weak"),
     ]
     r = verify(bundle, snippets, {0: ("yes", evidence, 0.9)})
     assert [s.strength for s in r.signals] == ["strong", "weak"]
+    assert "corroborated" in r.signals[0].flags

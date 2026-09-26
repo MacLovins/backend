@@ -1,6 +1,9 @@
 """Value of one piece of evidence (SPEC §1.7.5):
 
 v_e = strength_values[strength] × confidence × reliability(source) × 0.5 ** (age_days / half_life(source))
+
+A signal from a dated source type without any date gets profile.undated_decay instead: its age is unknown, and
+treating it as brand new would let undated pages outrank fresh news forever.
 """
 
 from datetime import date, datetime
@@ -23,8 +26,10 @@ def age_days(signal: VerifiedSignal, now: datetime) -> int | None:
 def decay_factor(signal: VerifiedSignal, profile: ScoringProfile, now: datetime) -> float:
     half_life = profile.half_life_days.get(signal.source_type)
     age = age_days(signal, now)
-    if half_life is None or age is None:
+    if half_life is None:
         return 1.0
+    if age is None:
+        return profile.undated_decay
     return 0.5 ** (age / half_life)
 
 

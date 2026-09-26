@@ -1,11 +1,12 @@
 """score_company — pure, deterministic, no LLM (SPEC §1.7.5, ARCHITECTURE §3.4).
 
-s_q      = 1 − Π_{top-k evidence}(1 − v_e)                   noisy-OR
+s_q      = 1 − Π_{top-k stories}(1 − v_e)                    noisy-OR; reprints of one story count once (V5)
 points_q = weights[q.weight] × s_q
 Intent   = 100 × (1 − exp(−Σ_{q+} points_q / tau_intent))
 Risk     = 100 × (1 − exp(−Σ_{q−} points_q / tau_risk))
 Priority = 100 × (Fit/100)^fit_exp × (Intent/100)^intent_exp × (1 − risk_penalty × Risk/100)
 Rules: exclude → disqualified, priority 0 · cap → min(priority, cap) · flag → warning only.
+Hot also needs ≥ hot_min_questions positive questions with s_q ≥ hot_min_strength: one story is not Hot.
 """
 
 import math
@@ -22,6 +23,7 @@ from leadradar_ai.contracts import (
     Tier,
 )
 from leadradar_ai.scoring.decay import evidence_value
+from leadradar_ai.scoring.dedupe import collapse_syndicated
 from leadradar_ai.scoring.derived import derived_signals
 from leadradar_ai.scoring.explain import build_why_now
 from leadradar_ai.scoring.fit import fit_score
@@ -49,10 +51,15 @@ def combine_priority(fit: float, intent: float, risk: float, profile: ScoringPro
     )
 
 
-def assign_tier(priority: float, disqualified: bool, profile: ScoringProfile) -> Tier:
+def assign_tier(
+    priority: float, disqualified: bool, profile: ScoringProfile, strong_questions: int | None = None
+) -> Tier:
+    """`strong_questions` = positive questions with s_q ≥ hot_min_strength (None: the check is skipped)."""
     if disqualified:
         return "disqualified"
-    if priority >= profile.tiers["hot"]:
+    if priority >= profile.tiers["hot"] and (
+        strong_questions is None or strong_questions >= profile.hot_min_questions
+    ):
         return "hot"
     if priority >= profile.tiers["warm"]:
         return "warm"
@@ -62,6 +69,12 @@ def assign_tier(priority: float, disqualified: bool, profile: ScoringProfile) ->
 def lead_sort_key(score: LeadScore, company_name: str) -> tuple:
     """Ranking order: priority ↓, intent ↓, fit ↓, name ↑."""
     return (-score.priority, -score.intent, -score.fit, company_name.casefold())
+
+
+def merge_derived(signals: list[StoredSignal], derived: list[StoredSignal]) -> list[StoredSignal]:
+    """Stored non-derived signals + the currently derivable ones, each in its stored version if there is one."""
+    stored = {s.id: s for s in signals}
+    return [s for s in signals if "derived" not in s.flags] + [stored.get(d.id, d) for d in derived]
 
 
 def _r1(x: float) -> float:
@@ -76,10 +89,12 @@ def score_company(
     *,
     include_derived: bool = True,
 ) -> LeadScore:
-    """`signals` are the stored active signals; derived NIS2/DORA signals are added from firmographics."""
+    """`signals` are the stored signals (non-active ones are ignored). With include_derived, NIS2/DORA signals
+    are recomputed from firmographics: a stored copy (same deterministic id) wins, so a user's rejection sticks,
+    and stored derived signals that no longer apply are dropped."""
     profile = bundle.scoring
     if include_derived:
-        signals = [*signals, *derived_signals(company, bundle, now)]
+        signals = merge_derived(signals, derived_signals(company, bundle, now))
     by_question: dict = defaultdict(list)
     for s in signals:
         if s.status == "active" and s.confidence >= profile.min_confidence:
@@ -89,12 +104,12 @@ def score_company(
     strengths: dict[str, float] = {}
     strongest: dict[str, StoredSignal] = {}
     positive_points = negative_points = 0.0
+    strong_questions = 0
     for q in bundle.questions:
-        valued = sorted(
-            ((evidence_value(s, profile, now), s) for s in by_question.get(q.id, ())),
-            key=lambda pair: pair[0],
-            reverse=True,
-        )[: profile.max_evidence_per_question]
+        stories = collapse_syndicated(by_question.get(q.id, []), lambda s: evidence_value(s, profile, now))
+        valued = [(evidence_value(s, profile, now), s) for s, _ in stories][
+            : profile.max_evidence_per_question
+        ]
         strength = noisy_or([v for v, _ in valued])
         points = profile.weights[q.weight] * strength
         strengths[q.key] = strength
@@ -102,6 +117,7 @@ def score_company(
             strongest[q.key] = valued[0][1]
         if q.polarity == "positive":
             positive_points += points
+            strong_questions += strength >= profile.hot_min_strength
         else:
             negative_points += points
         breakdown.append(
@@ -140,7 +156,7 @@ def score_company(
         intent=_r1(intent),
         risk=_r1(risk),
         priority=priority,
-        tier=assign_tier(priority, disqualified, profile),
+        tier=assign_tier(priority, disqualified, profile, strong_questions),
         disqualified=disqualified,
         rule_hits=rule_hits,
         fit_details=fit.details,
