@@ -77,6 +77,9 @@ class QuestionConfig(Contract):
     keywords: dict[str, list[str]] = {}  # {"en": [...], "de": [...]}
     job_titles: list[str] = []
     negative_terms: list[str] = []
+    # own cold / medium / hot guide {"weak", "moderate", "strong"} → text; empty = the category default
+    # (leadradar_ai.temperature)
+    temperature: dict[str, str] = {}
 
 
 class Criterion(Contract):

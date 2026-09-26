@@ -31,6 +31,11 @@ _SNIPPET = re.compile(r'<snippet id="(S\d+)"[^>]*?title="([^"]*)">(.*?)</snippet
 _QUESTION = re.compile(r'<question id="(Q\d+)"[^>]*>(.*?)</question>', re.DOTALL)
 
 
+def _question_text(body: str) -> str:
+    """The question without its <temperature …/> guide."""
+    return body.split("<temperature", 1)[0].strip()
+
+
 class GoldenOracleLLM:
     def __init__(self, labels: list[GoldenLabel], companies: dict[str, CompanyCase] | None = None) -> None:
         self.evidence: dict[tuple[str, str, str], list[EvidenceLabel]] = defaultdict(list)
@@ -81,5 +86,7 @@ class GoldenOracleLLM:
         company = _COMPANY.search(user)
         domain = company.group(1).strip() if company else ""
         snippets = [(sid, title, body) for sid, title, body in _SNIPPET.findall(user)]
-        answers = [self._answer(qid, text, domain, snippets) for qid, text in _QUESTION.findall(user)]
+        answers = [
+            self._answer(qid, _question_text(body), domain, snippets) for qid, body in _QUESTION.findall(user)
+        ]
         return LLMResult(output=request.output_model.model_validate({"answers": answers}), model=MODEL)

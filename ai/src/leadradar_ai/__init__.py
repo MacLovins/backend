@@ -64,10 +64,19 @@ from leadradar_ai.presets import SIGNAL_CATEGORIES, Preset, list_presets, load_p
 from leadradar_ai.retrieval import FastEmbedder
 from leadradar_ai.scoring import derived_signals, evaluate_rules, fit_score, lead_sort_key, score_company
 from leadradar_ai.settings import AISettings, LLMSettings
+from leadradar_ai.temperature import (
+    DEFAULT_TEMPERATURE,
+    GENERIC_TEMPERATURE,
+    TEMPERATURE_NAMES,
+    temperature_guide,
+)
 
 __all__ = [
+    "DEFAULT_TEMPERATURE",
     "EXTRACTION_PROMPT_VERSION",
+    "GENERIC_TEMPERATURE",
     "SIGNAL_CATEGORIES",
+    "TEMPERATURE_NAMES",
     "AISettings",
     "AnalysisDeps",
     "AnalysisDocument",
@@ -140,6 +149,7 @@ __all__ = [
     "run_eval",
     "score_company",
     "suggest_questions",
+    "temperature_guide",
     "thread_config",
     "write_report",
 ]

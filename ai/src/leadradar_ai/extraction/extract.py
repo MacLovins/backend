@@ -17,8 +17,10 @@ from leadradar_ai.llm.cache_key import estimate_tokens
 from leadradar_ai.llm.types import LLMClient, LLMRequest
 from leadradar_ai.prompts.loader import Prompt, load_prompt
 from leadradar_ai.retrieval.prefilter import PrefilterResult
+from leadradar_ai.temperature import TEMPERATURE_NAMES, temperature_guide
 
-PROMPT_NAME, PROMPT_VERSION_TAG = "extract_signals", "v1"
+# v2: every question carries its cold / medium / hot guide for `strength` (leadradar_ai.temperature)
+PROMPT_NAME, PROMPT_VERSION_TAG = "extract_signals", "v2"
 PROMPT_VERSION = f"{PROMPT_NAME}@{PROMPT_VERSION_TAG}"
 
 NO_CANDIDATES_RATIONALE = "No relevant snippets were found for this question."
@@ -55,7 +57,14 @@ def snippet_context(s: Snippet) -> dict:
 
 
 def question_context(pid: str, q: QuestionConfig) -> dict:
-    return {"id": pid, "polarity": q.polarity, "category": q.category, "text": q.text}
+    guide = temperature_guide(q)
+    return {
+        "id": pid,
+        "polarity": q.polarity,
+        "category": q.category,
+        "text": q.text,
+        "temperature": {TEMPERATURE_NAMES[level]: text for level, text in guide.items()},  # cold/medium/hot
+    }
 
 
 @cache

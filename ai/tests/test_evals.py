@@ -189,7 +189,7 @@ def test_report_explains_errors(fixtures, tmp_path):
     assert "ia_hiring** — no candidate snippets (data or prefilter); hint: RPA developer jobs" in md
     assert "quote_not_found: 1" in md
     md_path, json_path = write_report(result, tmp_path / "reports")
-    assert md_path.name == "2026-09-25-extract_signals-v1.md"
+    assert md_path.name == "2026-09-25-extract_signals-v2.md"
     data = json.loads(json_path.read_text())
     assert {d["outcome"] for d in data["decisions"]} == {"TP", "FP", "FN", "TN", "not_evaluated"}
 
