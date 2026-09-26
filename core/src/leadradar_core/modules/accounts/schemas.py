@@ -54,7 +54,7 @@ class CompanyOut(BaseModel):
     country_code: str | None
     industry_ids: list[str]
     employees: int | None
-    revenue_eur: Decimal | None
+    revenue_eur: float | None  # a JSON number, not a Decimal string
     hq_city: str | None
     wikidata_qid: str | None
     lei: str | None

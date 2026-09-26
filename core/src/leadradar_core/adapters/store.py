@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from leadradar_core.adapters import mapping
 from leadradar_core.modules.activity import events as domain_events
+from leadradar_core.modules.feedback.models import Feedback
 from leadradar_core.modules.intelligence.models import (
     Document,
     DocumentChunk,
@@ -109,20 +110,47 @@ class SqlAnalysisStore:
         signals: list[ai.VerifiedSignal],
         rejected: list[ai.RejectedEvidence],
     ) -> None:
-        """Previous active signals become superseded (history is kept); fingerprint saved in the same transaction."""
+        """Previous signals become superseded (history is kept); fingerprint saved in the same transaction.
+
+        Evidence the user marked "incorrect" in an earlier run (same evidence key) comes back already
+        rejected: the verdict lives in `feedback`, so it survives any number of re-analyses.
+        """
         async with self._sessions() as session, session.begin():
+            rejected_keys = set(
+                (
+                    await session.execute(
+                        select(Signal.evidence_key)
+                        .join(
+                            Feedback,
+                            and_(Feedback.target_type == "signal", Feedback.target_id == Signal.id),
+                        )
+                        .where(
+                            Signal.company_id == company_id,
+                            Signal.service_id == service_id,
+                            Signal.evidence_key.is_not(None),
+                            Feedback.verdict == "incorrect",
+                        )
+                    )
+                ).scalars()
+            )
             await session.execute(
                 update(Signal)
                 .where(
                     Signal.company_id == company_id,
                     Signal.service_id == service_id,
-                    Signal.status == "active",
+                    Signal.status.in_(("active", "rejected_by_user")),
                 )
                 .values(status="superseded")
             )
             rows = [mapping.signal_row(s, company_id, service_id, self._org_id, run_id) for s in signals]
+            for row in rows:
+                if row.evidence_key in rejected_keys:
+                    row.status = "rejected_by_user"
             session.add_all(rows)
-            await domain_events.signals_detected(session, rows)
+            # evidence the user already rejected must not re-alert on every run
+            await domain_events.signals_detected(
+                session, [row for row in rows if row.status != "rejected_by_user"]
+            )
             session.add_all(
                 RejectedEvidence(
                     org_id=self._org_id,

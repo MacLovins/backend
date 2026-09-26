@@ -95,7 +95,7 @@
 | `GET /leads?service_id=&tier=&country=&industry=&min_priority=&has_new=&q=&sort=&page=&page_size=` | любой | Рейтинг | P0 |
 | `GET /leads/{company_id}?service_id=` | любой | Карточка лида | P0 |
 | `GET /leads/export.csv?service_id=&…` | любой | CSV-экспорт | P1 |
-| `POST /signals/{id}/feedback` · `POST /leads/{company_id}/feedback` | любой | Оценки | P0 / P1 |
+| `POST/DELETE /signals/{id}/feedback` · `POST /leads/{company_id}/feedback` | любой | Оценки (upsert: один голос на пользователя и цель; DELETE отзывает голос; ответ содержит пересчитанный score) | P0 / P1 |
 | `GET /quality?service_id=` | любой | Метрики качества | P0 |
 | `GET /activity?limit=50` | любой | Лента событий | P1 |
 | `GET /health` · `GET /health/ready` (вне `/api/v1`) | — | Liveness и readiness (БД, Redis) | P0 |
