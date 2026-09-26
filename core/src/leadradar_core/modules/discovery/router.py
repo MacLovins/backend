@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
 from leadradar_core.db.session import get_db_session
@@ -18,6 +18,28 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
+
+COUNTRY_TO_ISO: dict[str, str] = {
+    "GERMANY": "DE",
+    "DEUTSCHLAND": "DE",
+    "DE": "DE",
+    "SWITZERLAND": "CH",
+    "SCHWEIZ": "CH",
+    "CH": "CH",
+    "DENMARK": "DK",
+    "DANMARK": "DK",
+    "DK": "DK",
+    "NETHERLANDS": "NL",
+    "HOLLAND": "NL",
+    "NEDERLAND": "NL",
+    "NL": "NL",
+    "FRANCE": "FR",
+    "FRANKREICH": "FR",
+    "FR": "FR",
+    "UNITED STATES": "US",
+    "USA": "US",
+    "US": "US",
+}
 
 
 @router.post("/search", response_model=DiscoverySearchOut)
@@ -99,10 +121,13 @@ async def search_discovery(
 
     items: list[DiscoveredCompany] = []
 
+    norm_country = search_in.country.upper() if search_in.country else ""
+    target_iso = COUNTRY_TO_ISO.get(norm_country, norm_country)
+
     # Attempt live discovery via leadradar_parser (Wikidata SPARQL)
     try:
         query = parser.DiscoveryQuery(
-            countries=[search_in.country.upper()] if search_in.country else ["DE", "FR", "NL", "CH", "DK"],
+            countries=[target_iso] if target_iso else ["DE", "FR", "NL", "CH", "DK"],
             industries=[search_in.industry] if search_in.industry else [],
             employees_min=500,
             limit=search_in.limit,
@@ -117,7 +142,7 @@ async def search_discovery(
                         name=cand.name,
                         domain=domain,
                         country_code=cand.country_code
-                        or (search_in.country.upper() if search_in.country else "EU"),
+                        or (target_iso or "EU"),
                         industry_ids=cand.industry_ids
                         or ([search_in.industry] if search_in.industry else ["enterprise"]),
                         employees=cand.employees or 1500,
@@ -138,7 +163,7 @@ async def search_discovery(
             already = domain in existing_domains
 
             # Filters
-            if search_in.country and c["country_code"] != search_in.country.upper():
+            if search_in.country and target_iso and c["country_code"] != target_iso:
                 continue
             if search_in.industry and search_in.industry not in c["industry_ids"]:
                 continue
@@ -159,6 +184,59 @@ async def search_discovery(
                 break
 
     return DiscoverySearchOut(items=items, total=len(items))
+
+
+@router.get("", response_model=list[dict])
+async def list_discovery_candidates(
+    country: str = Query(default=""),
+) -> list[dict]:
+    """Lightweight discovery query endpoint for UI."""
+    norm = country.strip().upper()
+    iso = COUNTRY_TO_ISO.get(norm, norm)
+    country_name_map = {
+        "DE": "Germany",
+        "CH": "Switzerland",
+        "DK": "Denmark",
+        "NL": "Netherlands",
+        "FR": "France",
+        "US": "United States",
+    }
+    curated = [
+        {"id": "db", "name": "Deutsche Bahn", "domain": "bahn.de", "country_code": "DE", "fit": 88},
+        {"id": "eon", "name": "E.ON", "domain": "eon.com", "country_code": "DE", "fit": 79},
+        {"id": "siemens", "name": "Siemens AG", "domain": "siemens.com", "country_code": "DE", "fit": 94},
+        {"id": "bayer", "name": "Bayer AG", "domain": "bayer.com", "country_code": "DE", "fit": 82},
+        {"id": "bmw", "name": "BMW Group", "domain": "bmwgroup.com", "country_code": "DE", "fit": 91},
+        {"id": "sap", "name": "SAP SE", "domain": "sap.com", "country_code": "DE", "fit": 96},
+        {"id": "kn", "name": "Kuehne + Nagel", "domain": "kuehne-nagel.com", "country_code": "CH", "fit": 95},
+        {"id": "nestle", "name": "Nestlé", "domain": "nestle.com", "country_code": "CH", "fit": 87},
+        {"id": "maersk", "name": "A.P. Moller - Maersk", "domain": "maersk.com", "country_code": "DK", "fit": 90},
+        {"id": "dsv", "name": "DSV Global Transport", "domain": "dsv.com", "country_code": "DK", "fit": 87},
+        {"id": "asml", "name": "ASML Holding", "domain": "asml.com", "country_code": "NL", "fit": 97},
+        {"id": "se", "name": "Schneider Electric", "domain": "se.com", "country_code": "FR", "fit": 92},
+        {"id": "amazon", "name": "Amazon", "domain": "amazon.com", "country_code": "US", "fit": 98},
+    ]
+    out = []
+    for c in curated:
+        if iso and c["country_code"] != iso:
+            continue
+        out.append({
+            "id": c["id"],
+            "name": c["name"],
+            "domain": c["domain"],
+            "country": country_name_map.get(c["country_code"], c["country_code"]),
+            "fit": c["fit"],
+        })
+    return out if out else [
+        {
+            "id": c["id"],
+            "name": c["name"],
+            "domain": c["domain"],
+            "country": country_name_map.get(c["country_code"], c["country_code"]),
+            "fit": c["fit"],
+        }
+        for c in curated
+    ]
 
 
 @router.post("/accept", response_model=CompanyOut, status_code=status.HTTP_201_CREATED)
