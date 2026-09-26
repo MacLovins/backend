@@ -18,6 +18,7 @@ from leadradar_core.modules.config.models import (
     Service,
     SignalQuestion,
 )
+from leadradar_core.modules.intelligence.evidence import evidence_key
 from leadradar_core.modules.intelligence.models import Document, Signal
 from leadradar_core.modules.leads.models import LeadScore
 
@@ -244,6 +245,7 @@ def signal_row(
         status="active",
         model=signal.model,
         prompt_version=signal.prompt_version,
+        evidence_key=evidence_key(signal.question_key, signal.quote, signal.url),
     )
 
 

@@ -90,6 +90,7 @@ async def rescore_service(session: AsyncSession, org_id: UUID, service_id: UUID)
     One query for companies, one for signals; score_company is pure. Commits nothing.
     """
     started = time.perf_counter()
+    await session.flush()  # the config change being rescored is part of the same transaction
     service = await session.get(Service, service_id)
     if service is None or service.org_id != org_id:
         return {"rescored": 0, "tier_changes": 0, "duration_ms": 0}
@@ -137,3 +138,39 @@ async def rescore_service(session: AsyncSession, org_id: UUID, service_id: UUID)
         "tier_changes": tier_changes,
         "duration_ms": int((time.perf_counter() - started) * 1000),
     }
+
+
+async def rescore_company(
+    session: AsyncSession, org_id: UUID, company_id: UUID, service_id: UUID
+) -> LeadScore | None:
+    """Recompute one company for one service from its active signals (after user feedback). Commits nothing.
+
+    Pending changes of the session (e.g. a signal just rejected by the user) are flushed first, so the new
+    score sees them. Returns the new current lead_score row, or None when company or service is unknown.
+    """
+    await session.flush()
+    service = await session.get(Service, service_id)
+    company = await session.get(Company, company_id)
+    if service is None or company is None or service.org_id != org_id or company.org_id != org_id:
+        return None
+    bundle = await load_bundle(session, service)
+    rows = await session.execute(
+        select(Signal).where(
+            Signal.company_id == company_id, Signal.service_id == service_id, Signal.status == "active"
+        )
+    )
+    signals = [mapping.stored_signal(r) for r in rows.scalars()]
+    score = ai.score_company(mapping.company_profile(company), bundle, signals, datetime.now(UTC))
+    await session.execute(
+        update(LeadScore)
+        .where(
+            LeadScore.company_id == company_id,
+            LeadScore.service_id == service_id,
+            LeadScore.is_current.is_(True),
+        )
+        .values(is_current=False)
+    )
+    row = mapping.lead_score_row(score, org_id)
+    session.add(row)
+    await session.flush()
+    return row

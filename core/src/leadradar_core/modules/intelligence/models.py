@@ -95,6 +95,7 @@ class Signal(Base, CoreTableMixin):
     __tablename__ = "signal"
     __table_args__ = (
         Index("idx_signal_company_service_status", "company_id", "service_id", "status"),
+        Index("idx_signal_evidence_key", "company_id", "service_id", "evidence_key"),
         {"schema": "core"},
     )
 
@@ -138,6 +139,8 @@ class Signal(Base, CoreTableMixin):
     )  # active / superseded / rejected_by_user
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # sha256 of question key + normalized quote + URL: the same evidence across runs (see evidence.py)
+    evidence_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
