@@ -1,12 +1,13 @@
-import csv
-import io
+import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from leadradar_auth.dependencies import get_current_principal, require_roles
 from leadradar_auth.schemas import Principal
 from leadradar_core.db.session import get_db_session
+from leadradar_core.errors import UnprocessableException
+from leadradar_core.modules.accounts.importer import DuplicatePolicy, MappingName
 from leadradar_core.modules.accounts.models import Company
 from leadradar_core.modules.accounts.schemas import (
     CompanyCreate,
@@ -15,8 +16,10 @@ from leadradar_core.modules.accounts.schemas import (
     CompanyUpdate,
     DocumentOut,
 )
+from leadradar_core.modules.accounts.service import check_import_size, import_companies
 from leadradar_core.modules.intelligence.models import Document
 from leadradar_core.pagination import PaginatedResponse
+from leadradar_core.settings import settings
 from leadradar_core.utils.domain import normalize_domain
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -155,56 +158,49 @@ async def import_companies_csv(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     file: Annotated[UploadFile, File()],
+    column_map: Annotated[
+        str | None,
+        Form(description='mapping=custom: JSON object target field → CSV column, e.g. {"name": "Company"}'),
+    ] = None,
+    mapping: Annotated[MappingName, Query()] = "default",
+    on_duplicate: Annotated[DuplicatePolicy, Query()] = "merge",
 ) -> CompanyImportReport:
-    content = await file.read()
-    report = CompanyImportReport()
-
-    try:
-        text = content.decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(text))
-        for row in reader:
-            name = row.get("name") or row.get("Company Name")
-            domain_raw = row.get("domain") or row.get("Website") or row.get("Domain")
-            if not name or not domain_raw:
-                report.skipped += 1
-                continue
-
-            normalized = normalize_domain(domain_raw)
-            if not normalized:
-                report.skipped += 1
-                continue
-
-            # Check if existing
-            stmt = select(Company).where(Company.org_id == principal.org_id, Company.domain == normalized)
-            existing = (await session.execute(stmt)).scalar_one_or_none()
-
-            if existing:
-                report.updated += 1
-            else:
-                company = Company(
-                    org_id=principal.org_id,
-                    name=name.strip(),
-                    domain=normalized,
-                    origin="csv",
-                    is_tracked=True,
-                )
-                session.add(company)
-                report.created += 1
-
-        await session.commit()
-    except Exception as e:
-        report.errors.append(str(e))
-
-    return report
+    """Import companies from CSV (≤ 5 MB, ≤ 5 000 rows). Mappings: default template, crunchbase, custom."""
+    content = await file.read(settings.IMPORT_MAX_BYTES + 1)
+    check_import_size(len(content), settings.IMPORT_MAX_BYTES)
+    parsed_map: dict[str, str] | None = None
+    if column_map:
+        try:
+            raw_map = json.loads(column_map)
+        except json.JSONDecodeError as e:
+            raise UnprocessableException("invalid_column_map", "column_map must be a JSON object") from e
+        if not isinstance(raw_map, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in raw_map.items()
+        ):
+            raise UnprocessableException(
+                "invalid_column_map", "column_map must map field names to column names"
+            )
+        parsed_map = raw_map
+    return await import_companies(
+        session,
+        principal.org_id,
+        content,
+        mapping=mapping,
+        column_map=parsed_map,
+        on_duplicate=on_duplicate,
+        max_rows=settings.IMPORT_MAX_ROWS,
+    )
 
 
-@router.get("/companies/{id}/documents", response_model=list[DocumentOut])
+@router.get("/companies/{id}/documents", response_model=PaginatedResponse[DocumentOut])
 async def get_company_documents(
     id: UUID,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
     source_type: str | None = Query(default=None),
-) -> list[DocumentOut]:
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> PaginatedResponse[DocumentOut]:
     company = await session.get(Company, id)
     if not company or company.org_id != principal.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
@@ -213,6 +209,14 @@ async def get_company_documents(
     if source_type:
         stmt = stmt.where(Document.source_type == source_type)
 
-    stmt = stmt.order_by(Document.fetched_at.desc())
+    total = (await session.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+    stmt = (
+        stmt.order_by(Document.fetched_at.desc(), Document.id).offset((page - 1) * page_size).limit(page_size)
+    )
     res = await session.execute(stmt)
-    return [DocumentOut.model_validate(doc) for doc in res.scalars().all()]
+    return PaginatedResponse(
+        items=[DocumentOut.model_validate(doc) for doc in res.scalars().all()],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )

@@ -1,12 +1,11 @@
 import os
+import sys
 from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-
-import sys
 
 class ParserSettings(BaseSettings):
     model_config = SettingsConfigDict(

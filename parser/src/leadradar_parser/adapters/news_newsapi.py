@@ -34,6 +34,7 @@ class NewsApiAdapter(SourceAdapter):
             "language": "en",
         }
         from datetime import timedelta
+
         earliest_allowed = datetime.now(UTC) - timedelta(days=28)
         since_date = max(plan.since, earliest_allowed) if plan.since else earliest_allowed
         params["from"] = since_date.strftime("%Y-%m-%d")

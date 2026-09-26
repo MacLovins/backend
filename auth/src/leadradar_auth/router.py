@@ -22,21 +22,28 @@ from leadradar_auth.security import create_access_token
 from leadradar_auth.service import AuthService
 from leadradar_auth.settings import auth_settings
 
-# In-memory rate limiter: (ip, email) -> list of timestamps
+# In-memory login rate limiter (per process): (ip, email) -> timestamps of failed attempts
 _login_attempts: dict[tuple[str, str], list[datetime]] = defaultdict(list)
-RATE_LIMIT_WINDOW = timedelta(minutes=5)
-MAX_LOGIN_ATTEMPTS = 10
+
+
+def _rate_window() -> timedelta:
+    return timedelta(seconds=auth_settings.LOGIN_RATE_WINDOW_S)
 
 
 def _check_rate_limit(ip: str, email: str) -> None:
     now = datetime.now(UTC)
     key = (ip, email.strip().lower())
-    attempts = [t for t in _login_attempts[key] if now - t < RATE_LIMIT_WINDOW]
-    _login_attempts[key] = attempts
-    if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+    attempts = [t for t in _login_attempts[key] if now - t < _rate_window()]
+    if attempts:
+        _login_attempts[key] = attempts
+    else:
+        _login_attempts.pop(key, None)
+    if len(attempts) >= auth_settings.LOGIN_RATE_LIMIT:
+        retry_after = max(1, int((attempts[0] + _rate_window() - now).total_seconds()) + 1)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many failed login attempts. Please try again later.",
+            detail="Too many login attempts. Please try again later.",
+            headers={"Retry-After": str(retry_after)},
         )
 
 
@@ -44,6 +51,15 @@ def _record_attempt(ip: str, email: str) -> None:
     now = datetime.now(UTC)
     key = (ip, email.strip().lower())
     _login_attempts[key].append(now)
+
+
+def _clear_attempts(ip: str, email: str) -> None:
+    _login_attempts.pop((ip, email.strip().lower()), None)
+
+
+def reset_login_rate_limit() -> None:
+    """Forget all recorded login attempts (tests, admin tooling)."""
+    _login_attempts.clear()
 
 
 def create_auth_router(
@@ -70,6 +86,7 @@ def create_auth_router(
                 detail="invalid_credentials",
             )
 
+        _clear_attempts(client_ip, login_in.email)
         user, principal = result
         token = create_access_token(principal)
 
@@ -78,7 +95,7 @@ def create_auth_router(
             value=token,
             max_age=auth_settings.ACCESS_TTL_MIN * 60,
             httponly=True,
-            secure=auth_settings.COOKIE_SECURE,
+            secure=bool(auth_settings.COOKIE_SECURE),
             samesite="lax",
             path="/",
         )
@@ -108,6 +125,7 @@ def create_auth_router(
                 detail="invalid_credentials",
             )
 
+        _clear_attempts(client_ip, form_data.username)
         _, principal = result
         token = create_access_token(principal)
         return TokenResponse(access_token=token, token_type="bearer")
@@ -129,7 +147,7 @@ def create_auth_router(
             value=token,
             max_age=auth_settings.ACCESS_TTL_MIN * 60,
             httponly=True,
-            secure=auth_settings.COOKIE_SECURE,
+            secure=bool(auth_settings.COOKIE_SECURE),
             samesite="lax",
             path="/",
         )
@@ -146,7 +164,7 @@ def create_auth_router(
             key=auth_settings.COOKIE_NAME,
             path="/",
             httponly=True,
-            secure=auth_settings.COOKIE_SECURE,
+            secure=bool(auth_settings.COOKIE_SECURE),
             samesite="lax",
         )
 
