@@ -138,3 +138,30 @@ async def test_http_fractional_host_rps_is_supported(tmp_path: Path) -> None:
     async with HttpClient(settings, transport=transport, cache=False) as client:
         response = await client.get("https://example.com/", check_robots=False)
     assert response.text == "ok"
+
+
+def test_http_redact_url_hides_api_keys() -> None:
+    from leadradar_parser.http import redact_url
+
+    url = "https://serpapi.com/search.json?q=DHL&api_key=secret&apiKey=x&user_key=y"
+    assert redact_url(url) == "https://serpapi.com/search.json?q=DHL&api_key=***&apiKey=***&user_key=***"
+    assert redact_url("https://example.com/a") == "https://example.com/a"
+
+
+async def test_http_total_deadline_stops_tarpitting_hosts(tmp_path: Path) -> None:
+    """httpx timeouts are per read; a host that never finishes must still fail within request_timeout_s."""
+
+    async def tarpit(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(30)
+        return httpx.Response(200)
+
+    import time
+
+    from leadradar_parser.errors import SourceTimeout
+
+    settings = make_settings(tmp_path, request_timeout_s=0.2, retry_attempts=1)
+    async with HttpClient(settings, transport=httpx.MockTransport(tarpit), cache=False) as client:
+        started = time.monotonic()
+        with pytest.raises(SourceTimeout):
+            await client.get("https://slow.example/", check_robots=False)
+    assert time.monotonic() - started < 2

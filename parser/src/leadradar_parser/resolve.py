@@ -53,7 +53,7 @@ async def _resolve(ref: CompanyRef, http: HttpClient) -> ResolvedCompany:
     except (ParserError, httpx.HTTPError, etree.ParserError, ValueError):
         notes.append("homepage unavailable")
 
-    if careers_url is None:
+    if careers_url is None and "homepage unavailable" not in notes:
         careers_url = await _probe_career_paths(homepage, http)
     if careers_url is None:
         notes.append("careers not found")

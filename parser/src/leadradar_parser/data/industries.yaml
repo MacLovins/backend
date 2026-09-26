@@ -1,6 +1,6 @@
-- {id: logistics, label: "Logistics & Transport", wikidata: [Q177777, Q651658, Q7590], nace: [H49, H52], nis2: annex_i, dora: false}
-- {id: airlines, label: "Airlines", wikidata: [Q46970], nace: [H51], nis2: annex_i, dora: false}
-- {id: rail, label: "Rail Transport", wikidata: [Q3565868, Q249556], nace: [H49.1, H49.2], nis2: annex_i, dora: false}
+- {id: logistics, label: "Logistics & Transport", wikidata: [Q177777, Q651658], nace: [H49, H52], nis2: annex_i, dora: false}
+- {id: airlines, label: "Airlines", wikidata: [Q1757562], wikidata_classes: [Q46970], nace: [H51], nis2: annex_i, dora: false}
+- {id: rail, label: "Rail Transport", wikidata: [Q3565868], wikidata_classes: [Q249556], nace: [H49.1, H49.2], nis2: annex_i, dora: false}
 - {id: postal_courier, label: "Postal & Courier", wikidata: [Q1529128, Q848466], nace: [H53], nis2: annex_i, dora: false}
 - {id: automotive, label: "Automotive", wikidata: [Q190117], nace: [C29], nis2: null, dora: false}
 - {id: manufacturing, label: "Manufacturing", wikidata: [Q187939], nace: [C], nis2: annex_ii, dora: false}

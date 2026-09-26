@@ -157,6 +157,8 @@ class Industry(Contract):
     id: str
     label: str
     wikidata: list[str]
+    # Classes matched through P31 "instance of" (e.g. airline Q46970), in addition to P452 industry values.
+    wikidata_classes: list[str] = Field(default_factory=list)
     nace: list[str]
     nis2: str | None = None
     dora: bool = False

@@ -13,7 +13,6 @@ dependencies = [
   "hishel[async]>=1.1,<2",
   "httpx>=0.28,<1",
   "lxml>=6,<7",
-  "playwright>=1.63.0",
   "protego>=0.5,<1",
   "pydantic>=2.12,<3",
   "pydantic-settings>=2.11,<3",
@@ -22,6 +21,10 @@ dependencies = [
   "trafilatura>=2,<3",
   "typer>=0.19,<1",
 ]
+
+[project.optional-dependencies]
+# PR-20 fallback for JS-only pages; also run `playwright install chromium`.
+browser = ["playwright>=1.63.0"]
 
 [project.scripts]
 lr-parser = "leadradar_parser.cli:app"

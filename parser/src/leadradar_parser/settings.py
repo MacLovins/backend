@@ -1,12 +1,11 @@
 import os
+import sys
 from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-
-import sys
 
 class ParserSettings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -20,20 +19,19 @@ class ParserSettings(BaseSettings):
         default_factory=lambda: [
             "google_news",
             "gdelt",
-            "rsshub",
             "website",
             "jobs_ats",
             "careers_html",
             "wikidata",
             *(["newsapi"] if os.getenv("NEWSAPI_KEY") else []),
             *(["serpapi"] if os.getenv("SERPAPI_KEY") else []),
+            *(["rsshub"] if os.getenv("RSSHUB_BASE_URL") else []),
             *(["crunchbase"] if os.getenv("CRUNCHBASE_API_KEY") else []),
         ]
     )
-    user_agent: str = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    )
+    # Identifiable bot UA with a contact (SPEC §1.7.1). Measured: a spoofed browser UA gets HTTP 429
+    # (Retry-After 1000 s) from Wikidata and tarpitted connections from Akamai sites such as dhl.com.
+    user_agent: str = "LeadRadarBot/0.1 (+https://github.com/MacLovins/backend)"
     cache_dir: Path = Path(".cache/parser")
     cache_ttl_s: int = 86_400
     host_rps: float = 1.0
@@ -42,6 +40,24 @@ class ParserSettings(BaseSettings):
     retry_attempts: int = 2
     retry_min_wait_s: float = 0.5
     retry_max_wait_s: float = 15.0
+
+    # Source credentials use their conventional names (no PARSER_ prefix). Declaring them here means they are
+    # read from .env like every other setting: pydantic-settings does not export .env into os.environ, so a
+    # plain os.getenv() in an adapter misses them when core runs outside Docker.
+    newsapi_key: str | None = Field(default=None, validation_alias="NEWSAPI_KEY")
+    serpapi_key: str | None = Field(default=None, validation_alias="SERPAPI_KEY")
+    rsshub_base_url: str | None = Field(default=None, validation_alias="RSSHUB_BASE_URL")
+    crunchbase_api_key: str | None = Field(default=None, validation_alias="CRUNCHBASE_API_KEY")
+
+    def env(self, name: str) -> str | None:
+        """A source credential: the process environment first, then the same key loaded from .env."""
+        values = {
+            "NEWSAPI_KEY": self.newsapi_key,
+            "SERPAPI_KEY": self.serpapi_key,
+            "RSSHUB_BASE_URL": self.rsshub_base_url,
+            "CRUNCHBASE_API_KEY": self.crunchbase_api_key,
+        }
+        return os.getenv(name) or values.get(name) or None
 
     @field_validator("adapters", mode="before")
     @classmethod

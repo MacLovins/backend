@@ -1,3 +1,4 @@
+import re
 import zlib
 from collections import deque
 from collections.abc import AsyncIterator, Iterable
@@ -19,6 +20,7 @@ MAX_SITEMAP_URLS = 5_000
 MAX_SITEMAP_BYTES = 50_000_000
 MAX_ARTICLES = 15
 MIN_PAGE_CHARS = 300
+LOCALE_SEGMENT = re.compile(r"^(?:[a-z]{2}|global)(?:[-_][a-z]{2})?$")
 KIND_ORDER = ("news", "strategy", "ir", "about", "careers", "other")
 ASSET_SUFFIXES = (
     ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico", ".css", ".js", ".json", ".xml",
@@ -57,7 +59,7 @@ class WebsiteAdapter:
         roots = _site_roots(company)
         candidates = await self._candidate_urls(company, http, roots)
         newsroom = canonicalize_url(company.newsroom_url) if company.newsroom_url else None
-        queue = deque(_select(candidates, plan, newsroom))
+        queue = deque(_select(candidates, plan, newsroom, company.domain))
         queued = set(queue)
         articles: deque[str] = deque()
         article_count = 0
@@ -112,10 +114,14 @@ class WebsiteAdapter:
         if company.newsroom_url and _is_own(company.newsroom_url, roots):
             candidates[canonicalize_url(company.newsroom_url)] = None
 
-        try:
-            sitemaps = [url for url in await http.robots_sitemaps(homepage) if _is_own(url, roots)]
-        except ParserError:
-            sitemaps = []
+        # The company domain first: homepages often geo-redirect to a regional or product site.
+        sitemaps: list[str] = []
+        for origin in dict.fromkeys((f"https://{company.domain}/", homepage)):
+            try:
+                sitemaps += [url for url in await http.robots_sitemaps(origin) if _is_own(url, roots)]
+            except ParserError:
+                continue
+        sitemaps = list(dict.fromkeys(sitemaps))
         if not sitemaps:
             sitemaps = [urljoin(homepage, "/sitemap.xml"), urljoin(homepage, "/sitemap_index.xml")]
 
@@ -155,10 +161,16 @@ class WebsiteAdapter:
         return candidates
 
 
-def _select(candidates: dict[str, datetime | None], plan: CollectPlan, newsroom: str | None) -> list[str]:
-    """Round-robin over page kinds so fresh news does not crowd out strategy, IR and about pages."""
+def _select(
+    candidates: dict[str, datetime | None], plan: CollectPlan, newsroom: str | None, domain: str = ""
+) -> list[str]:
+    """Round-robin over page kinds so fresh news does not crowd out strategy, IR and about pages.
+
+    Country copies of the same page (/de-en/about, /fr-en/about…) count once: the global/English copy on the
+    company's primary domain wins.
+    """
     groups: dict[str, list[str]] = {kind: [] for kind in KIND_ORDER}
-    for url in candidates:
+    for url in _one_per_locale(candidates, domain):
         groups.setdefault(page_kind(url), []).append(url)
 
     def rank(url: str) -> tuple[int, int, float, int]:
@@ -173,6 +185,25 @@ def _select(candidates: dict[str, datetime | None], plan: CollectPlan, newsroom:
             if group and len(selected) < plan.max_website_pages:
                 selected.append(group.pop(0))
     return selected
+
+
+def _one_per_locale(candidates: dict[str, datetime | None], domain: str) -> list[str]:
+    def preference(url: str) -> tuple[int, int]:
+        host = (urlsplit(url).hostname or "").removeprefix("www.")
+        locales = [segment for segment in _segments(url) if LOCALE_SEGMENT.match(segment)]
+        english = all("en" in re.split(r"[-_]", locale) for locale in locales)
+        return (
+            0 if host == domain or host.endswith(f".{domain}") else 1,
+            0 if not locales else 1 if english else 2,
+        )
+
+    chosen: dict[str, str] = {}
+    for url in sorted(candidates, key=preference):
+        parts = urlsplit(url)
+        key = "/".join(segment for segment in _segments(url) if not LOCALE_SEGMENT.match(segment))
+        chosen.setdefault(f"{parts.query}|{key}", url)
+    keep = set(chosen.values())
+    return [url for url in candidates if url in keep]
 
 
 def _article_links(document: str, base: str, listing_url: str, roots: set[str]) -> Iterable[str]:

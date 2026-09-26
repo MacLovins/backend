@@ -58,7 +58,7 @@ def detect_language(text: str) -> str | None:
     if len(text.strip()) < 40:
         return None
     try:
-        result = detect(text.replace("\n", " ")[:2_000], low_memory=True)
+        result = detect(" ".join(text.split())[:400], low_memory=True)
         return str(result.get("lang")) if isinstance(result, dict) else None
     except (ValueError, RuntimeError):
         return None

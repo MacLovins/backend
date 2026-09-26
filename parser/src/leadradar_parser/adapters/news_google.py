@@ -1,115 +1,102 @@
 import asyncio
-import urllib.parse
-import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 
 from ..contracts import CollectPlan, Document, RateLimit, ResolvedCompany
+from ..errors import ParserError
 from ..http import HttpClient
-from ..normalize import canonicalize_url, content_hash
-from .base import SourceAdapter
+from ..normalize import utc_datetime
+from .common import make_document, parse_feed, raise_if_nothing_succeeded, search_name
+
+RSS_URL = "https://news.google.com/rss/search"
+# Google News editions per plan language: (hl, gl, ceid)
+EDITIONS = {
+    "en": ("en-US", "US", "US:en"),
+    "de": ("de", "DE", "DE:de"),
+    "fr": ("fr", "FR", "FR:fr"),
+    "it": ("it", "IT", "IT:it"),
+    "es": ("es", "ES", "ES:es"),
+    "nl": ("nl", "NL", "NL:nl"),
+}
+MAX_EDITIONS = 2
+# Used when the plan has no news_topics (the ai presets normally pass them).
+DEFAULT_TOPICS = (
+    '(AI OR agentic OR automation OR robotics OR "digital transformation")',
+    '(cybersecurity OR "data breach" OR ransomware OR NIS2 OR DORA)',
+    '(strategy OR efficiency OR "cost reduction" OR restructuring OR CEO OR CIO)',
+)
 
 
-class GoogleNewsAdapter(SourceAdapter):
-    """Fetches company news via Google News RSS and RSSHub feeds.
-
-    Zero API key required, reliable, resilient to rate limits, supports multi-query search.
-    """
+class GoogleNewsAdapter:
+    """Google News RSS search: headlines + snippets, no key. Links are Google redirect URLs (headline only)."""
 
     id = "google_news"
     source_type = "news"
     requires_env = None
-    rate_limit = RateLimit(requests=2, per_seconds=1, scope="global")
+    rate_limit = RateLimit(requests=1, per_seconds=1, scope="global")
 
     async def fetch(
         self, company: ResolvedCompany, plan: CollectPlan, http: HttpClient
     ) -> AsyncIterator[Document]:
-        seen_titles: set[str] = set()
-        queries = self._build_queries(company, plan)
-
-        for query in queries:
-            params = urllib.parse.urlencode(
-                {
-                    "q": query,
-                    "hl": "en-US",
-                    "gl": "US",
-                    "ceid": "US:en",
-                }
-            )
-            url = f"https://news.google.com/rss/search?{params}"
-
-            try:
-                response = await http.get(url, check_robots=False, attempts=1)
-                if response.status_code != 200:
+        name = search_name(company)
+        languages = [code for code in plan.languages if code in EDITIONS][:MAX_EDITIONS] or ["en"]
+        seen: set[str] = set()
+        failures: list[Exception] = []
+        succeeded = emitted = 0
+        for query in self._queries(name, plan):
+            for language in languages:
+                hl, gl, ceid = EDITIONS[language]
+                try:
+                    # News RSS is a feed endpoint; robots.txt handling is decided in SPEC §1.7.1 (see README).
+                    response = await http.get(
+                        RSS_URL,
+                        check_robots=False,
+                        attempts=1,
+                        params={"q": query, "hl": hl, "gl": gl, "ceid": ceid},
+                    )
+                    items = parse_feed(response.content)
+                except (ParserError, ValueError) as exc:
+                    failures.append(exc)
                     continue
-            except Exception:
-                continue
+                succeeded += 1
+                for item in items:
+                    title = _strip_publisher(item.title, item.source)
+                    published_at = utc_datetime(item.published)
+                    key = title.casefold()
+                    if not title or key in seen or (published_at and published_at < plan.since):
+                        continue
+                    seen.add(key)
+                    description = item.description if item.description.casefold() != key else ""
+                    yield make_document(
+                        source_type="news",
+                        source_name=self.id,
+                        url=item.link or RSS_URL,
+                        title=title,
+                        text=f"{title}\n{description}".strip(),
+                        published_at=published_at,
+                        meta={
+                            "publisher": item.source,
+                            "headline_only": True,
+                            "query": query,
+                            "edition": ceid,
+                        },
+                    )
+                    emitted += 1
+                    if emitted >= plan.max_items_per_source:
+                        return
+                await asyncio.sleep(0.1)
+        raise_if_nothing_succeeded(succeeded, failures)
 
-            try:
-                root = ET.fromstring(response.content)
-            except Exception:
-                continue
-
-            for item in root.iter("item"):
-                title = (item.findtext("title") or "").strip()
-                source = (item.findtext("source") or "").strip()
-                if title.endswith(f" - {source}"):
-                    title = title[: -len(f" - {source}")].strip()
-
-                key = title.casefold()
-                if not title or key in seen_titles:
-                    continue
-                seen_titles.add(key)
-
-                pub_date_str = item.findtext("pubDate")
-                published_at = None
-                if pub_date_str:
-                    try:
-                        published_at = parsedate_to_datetime(pub_date_str).astimezone(UTC)
-                    except Exception:
-                        pass
-
-                if published_at and plan.since and published_at < plan.since:
-                    continue
-
-                link = (item.findtext("link") or "").strip()
-                description = (item.findtext("description") or "").strip()
-
-                doc = Document(
-                    source_type="news",
-                    source_name="google_news",
-                    url=link or f"https://news.google.com/?q={urllib.parse.quote(title)}",
-                    canonical_url=canonicalize_url(link) if link else "",
-                    title=title,
-                    text=f"{title}\n\n{description}" if description else title,
-                    published_at=published_at or datetime.now(UTC),
-                    fetched_at=datetime.now(UTC),
-                    language="en",
-                    content_hash=content_hash(title),
-                    meta={
-                        "publisher": source,
-                        "headline_only": True,
-                        "query": query,
-                    },
-                )
-                yield doc
-
-            # Gentle spacing between query batches
-            await asyncio.sleep(0.1)
-
-    def _build_queries(self, company: ResolvedCompany, plan: CollectPlan) -> list[str]:
-        name = company.name or company.domain
-        base_name = f'"{name}"'
-
-        queries: list[str] = [
-            f'{base_name} (AI OR "agentic" OR automation OR robotics OR IT)',
-            f'{base_name} (cybersecurity OR "data breach" OR NIS2 OR DORA OR cloud)',
-            f'{base_name} (strategy OR efficiency OR "cost reduction" OR restructuring OR digital)',
-        ]
-
+    @staticmethod
+    def _queries(name: str, plan: CollectPlan) -> list[str]:
+        base = f'"{name}"'
         if plan.news_topics:
-            topics_clause = " OR ".join(f'"{t}"' for t in plan.news_topics[:3])
-            queries.append(f"{base_name} ({topics_clause})")
+            topics = " OR ".join(f'"{topic}"' if " " in topic else topic for topic in plan.news_topics[:8])
+            return [base, f"{base} ({topics})"]
+        return [base, *(f"{base} {topics}" for topics in DEFAULT_TOPICS)]
 
-        return queries
+
+def _strip_publisher(title: str, source: str | None) -> str:
+    title = title.strip()
+    if source and title.endswith(f" - {source}"):
+        return title[: -len(f" - {source}")].strip()
+    return title

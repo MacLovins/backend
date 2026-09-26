@@ -2,7 +2,7 @@ import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 import httpx
@@ -23,6 +23,7 @@ from .settings import ParserSettings
 
 BLOCKED_HOSTS = {"linkedin.com", "facebook.com", "instagram.com", "x.com", "twitter.com"}
 BLOCKED_LABELS = {"indeed", "glassdoor"}
+SECRET_PARAMS = {"api_key", "apikey", "key", "user_key", "token", "access_token", "app_key", "app_id"}
 RETRYABLE_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
 
 _LOOP_LOCKS: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = WeakKeyDictionary()
@@ -56,6 +57,18 @@ def is_blocked_host(host: str) -> bool:
         return True
     labels = normalized.split(".")
     return any(label in BLOCKED_LABELS for label in labels)
+
+
+def redact_url(url: str) -> str:
+    """Hide API keys passed as query parameters (SerpAPI, NewsAPI…) before a URL reaches errors or logs."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    query = [
+        (k, "***" if k.lower() in SECRET_PARAMS else v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+    ]
+    return urlunsplit(parts._replace(query=urlencode(query, safe="*")))
 
 
 def ensure_allowed_host(host: str) -> None:
@@ -185,7 +198,7 @@ class HttpClient:
     ) -> httpx.Response:
         ensure_allowed_host(urlsplit(url).hostname or "")
         if check_robots and method.upper() in {"GET", "HEAD"} and not await self.allowed(url):
-            raise RobotsDenied(f"robots.txt disallows {url}")
+            raise RobotsDenied(f"robots.txt disallows {redact_url(url)}")
         return await self._request(method, url, attempts=attempts, **kwargs)
 
     async def get(self, url: str, **kwargs: object) -> httpx.Response:
@@ -200,6 +213,7 @@ class HttpClient:
     ) -> httpx.Response:
         host = urlsplit(url).hostname or ""
         ensure_allowed_host(host)
+        safe_url = redact_url(url)
         last_response: httpx.Response | None = None
         retrying = AsyncRetrying(
             stop=stop_after_attempt(max(1, attempts or self.settings.retry_attempts)),
@@ -207,28 +221,32 @@ class HttpClient:
             retry=retry_if_exception_type((*RETRYABLE_ERRORS, _RetryableStatus)),
             reraise=True,
         )
+        # httpx timeouts are per operation (connect / each read); a host that trickles bytes never trips
+        # them. Cap the whole attempt as well (Wikidata passes timeout=60 explicitly).
+        deadline = float(kwargs.get("timeout") or self.settings.request_timeout_s)  # type: ignore[arg-type]
         try:
             async for attempt in retrying:
                 with attempt:
-                    response = await self._client.request(method, url, **kwargs)
+                    async with asyncio.timeout(deadline):
+                        response = await self._client.request(method, url, **kwargs)
                     if response.status_code == 429 or response.status_code >= 500:
                         raise _RetryableStatus(response)
                     response.raise_for_status()
                     return response
         except _RetryableStatus as exc:
             last_response = exc.response
-        except httpx.TimeoutException as exc:
-            raise SourceTimeout(f"Timeout requesting {url}") from exc
+        except (httpx.TimeoutException, TimeoutError) as exc:
+            raise SourceTimeout(f"Timeout requesting {safe_url}") from exc
         except httpx.TransportError as exc:
-            raise SourceRequestFailed(f"Network error requesting {url}: {exc}") from exc
+            raise SourceRequestFailed(f"Network error requesting {safe_url}: {type(exc).__name__}") from exc
         except httpx.HTTPStatusError as exc:
-            raise SourceRequestFailed(f"HTTP {exc.response.status_code}: {url}") from exc
+            raise SourceRequestFailed(f"HTTP {exc.response.status_code}: {safe_url}") from exc
 
         if last_response is not None and last_response.status_code == 429:
             retry_after = _retry_after_seconds(last_response.headers.get("Retry-After"))
             raise SourceRateLimited(f"Rate limited by {host}", retry_after)
         status = last_response.status_code if last_response is not None else "unknown"
-        raise SourceRequestFailed(f"HTTP {status}: {url}")
+        raise SourceRequestFailed(f"HTTP {status}: {safe_url}")
 
     def _wait(self, state: RetryCallState) -> float:
         exc = state.outcome.exception() if state.outcome else None

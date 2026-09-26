@@ -1,12 +1,23 @@
+from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit
 
 from .contracts import CompanyCandidate, CompanyRef, DiscoveryQuery, Firmographics
+from .errors import ParserError, SourceTimeout
 from .http import HttpClient, shared_lock
 from .taxonomy import country_catalog, industry_taxonomy
 
 API_URL = "https://www.wikidata.org/w/api.php"
 SPARQL_URL = "https://query.wikidata.org/sparql"
+# QLever mirror of Wikidata (Uni Freiburg): same data, answers the discovery lookups in < 1 s while WDQS
+# regularly times out on them. Discovery uses it first and falls back to WDQS.
+QLEVER_URL = "https://qlever.dev/api/wikidata"
+QLEVER_TIMEOUT_S = 20.0
+SPARQL_PREFIXES = (
+    "PREFIX wd: <http://www.wikidata.org/entity/>\n"
+    "PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n"
+    "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+)
 WIKIDATA_TIMEOUT_S = 60.0
 EURO_QID = "Q4916"
 
@@ -30,9 +41,13 @@ WHERE {{
   OPTIONAL {{ ?item wdt:P1278 ?lei0 . }}
   OPTIONAL {{ ?item wdt:P2088 ?cb0 . }}
   OPTIONAL {{
-    ?item p:P169 ?ceoStatement . ?ceoStatement ps:P169 ?ceo .
-    FILTER NOT EXISTS {{ ?ceoStatement pq:P582 ?ceoEnd . }}
-    ?ceo rdfs:label ?ceoLabel0 . FILTER(LANG(?ceoLabel0) = "en")
+    # Current CEO: no end date, most recent start date (old statements often lack P582).
+    SELECT ?ceoLabel0 WHERE {{
+      wd:{qid} p:P169 ?ceoStatement . ?ceoStatement ps:P169 ?ceo .
+      FILTER NOT EXISTS {{ ?ceoStatement pq:P582 ?ceoEnd . }}
+      OPTIONAL {{ ?ceoStatement pq:P580 ?ceoStart . }}
+      ?ceo rdfs:label ?ceoLabel0 . FILTER(LANG(?ceoLabel0) = "en")
+    }} ORDER BY DESC(?ceoStart) LIMIT 1
   }}
   OPTIONAL {{ ?item wdt:P452 ?industry0 . }}
   SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
@@ -40,24 +55,24 @@ WHERE {{
 GROUP BY ?item ?itemLabel
 """
 
-DISCOVERY_QUERY = """
-SELECT ?item ?itemLabel ?website ?cc (MAX(?emp) AS ?employees)
-       (SAMPLE(?lei0) AS ?lei) (SAMPLE(?cb0) AS ?cbId)
-       (GROUP_CONCAT(DISTINCT STR(?industry); separator="|") AS ?industries)
+# One light query per industry QID: WDQS times out on a single query over all QIDs (measured 504 / 60 s+).
+DISCOVERY_QUERY = (
+    SPARQL_PREFIXES
+    + """
+SELECT ?item ?itemLabel ?website ?cc (MAX(?emp) AS ?employees) (SAMPLE(?lei0) AS ?lei) (SAMPLE(?cb0) AS ?cbId)
 WHERE {{
-  VALUES ?industry {{ {industry_qids} }}
   VALUES ?country {{ {country_qids} }}
-  ?item wdt:P452 ?industry ; wdt:P17 ?country ; wdt:P856 ?website .
+  ?item wdt:{prop} wd:{qid} ; wdt:P17 ?country ; wdt:P856 ?website .
   ?country wdt:P297 ?cc .
   OPTIONAL {{ ?item wdt:P1128 ?emp . }}
   OPTIONAL {{ ?item wdt:P1278 ?lei0 . }}
   OPTIONAL {{ ?item wdt:P2088 ?cb0 . }}
-  SERVICE wikibase:label {{ bd:serviceParam wikibase:language "en". }}
+  OPTIONAL {{ ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en") }}
 }}
 GROUP BY ?item ?itemLabel ?website ?cc
-HAVING ({having})
-ORDER BY DESC(?employees) LIMIT {limit}
 """
+)
+DISCOVERY_BUDGET_S = 90.0
 
 
 async def resolve_firmographics(company: CompanyRef, http: HttpClient) -> Firmographics | None:
@@ -86,69 +101,95 @@ async def resolve_firmographics(company: CompanyRef, http: HttpClient) -> Firmog
     )
 
 
-async def discover_companies(query: DiscoveryQuery, http: HttpClient) -> list[CompanyCandidate]:
+async def discover_companies(
+    query: DiscoveryQuery, http: HttpClient, *, time_budget_s: float = DISCOVERY_BUDGET_S
+) -> list[CompanyCandidate]:
     industries = {item.id: item for item in industry_taxonomy()}
     countries = {item.code: item for item in country_catalog()}
     selected_industries = [industries[item] for item in query.industries if item in industries]
     selected_countries = [countries[item.upper()] for item in query.countries if item.upper() in countries]
-    if not selected_industries or not selected_countries:
+    lookups = [
+        (prop, qid, industry.id)
+        for industry in selected_industries
+        for prop, qids in (("P452", industry.wikidata), ("P31", industry.wikidata_classes))
+        for qid in qids
+    ]
+    if not lookups or not selected_countries:
         return []
-    qid_to_industry = {qid: item.id for item in selected_industries for qid in item.wikidata}
-    if not qid_to_industry:
-        return []
-    bindings = await _sparql(
-        http,
-        DISCOVERY_QUERY.format(
-            industry_qids=" ".join(f"wd:{qid}" for qid in sorted(qid_to_industry)),
-            country_qids=" ".join(f"wd:{item.wikidata_qid}" for item in selected_countries),
-            having=_employees_having(query.employees_min, query.employees_max),
-            # One company may list several websites; over-fetch, then dedupe by QID and domain.
-            limit=query.limit * 2,
-        ),
-    )
+    country_qids = " ".join(f"wd:{item.wikidata_qid}" for item in selected_countries)
+
+    merged: dict[str, dict[str, Any]] = {}
+    failures: list[Exception] = []
+    succeeded = 0
+    deadline = monotonic() + time_budget_s
+    for prop, qid, industry_id in lookups:
+        remaining = deadline - monotonic()
+        if remaining < 1:
+            failures.append(SourceTimeout(f"Discovery time budget of {time_budget_s:.0f}s exhausted"))
+            break
+        sparql = DISCOVERY_QUERY.format(country_qids=country_qids, prop=prop, qid=qid)
+        try:
+            bindings = await _sparql(
+                http, sparql, endpoint=QLEVER_URL, timeout_s=min(QLEVER_TIMEOUT_S, remaining)
+            )
+        except ParserError:
+            try:
+                remaining = deadline - monotonic()
+                if remaining < 1:
+                    raise SourceTimeout(f"Discovery time budget of {time_budget_s:.0f}s exhausted") from None
+                bindings = await _sparql(http, sparql, timeout_s=min(WIKIDATA_TIMEOUT_S, remaining))
+            except ParserError as exc:  # one slow industry must not lose the others
+                failures.append(exc)
+                continue
+        succeeded += 1
+        for row in bindings:
+            item_qid = _entity_id(_value(row, "item"))
+            domain = (urlsplit(_value(row, "website") or "").hostname or "").lower().removeprefix("www.")
+            if not item_qid or not domain:
+                continue
+            entry = merged.setdefault(
+                item_qid,
+                {"name": _value(row, "itemLabel"), "domain": domain, "cc": _value(row, "cc"), "employees": None,
+                 "lei": _value(row, "lei"), "cb": _value(row, "cbId"), "industries": set()},
+            )  # fmt: skip
+            employees = _int_value(row, "employees")
+            if employees is not None and (entry["employees"] is None or employees > entry["employees"]):
+                entry["employees"] = employees
+            entry["industries"].add(industry_id)
+    if not succeeded and failures:
+        raise failures[0]
+
     excluded = {domain.lower().removeprefix("www.") for domain in query.exclude_domains}
+    minimum, maximum = query.employees_min, query.employees_max
     seen_domains: set[str] = set()
-    seen_items: set[str] = set()
     candidates: list[CompanyCandidate] = []
-    for row in bindings:
-        qid = _entity_id(_value(row, "item")) or ""
-        domain = (urlsplit(_value(row, "website") or "").hostname or "").lower().removeprefix("www.")
-        if not qid or not domain or domain in excluded or domain in seen_domains or qid in seen_items:
+    # Largest first; unknown size last but kept (SPEC §1.7.6: a data gap, not a disqualifier).
+    ordered = sorted(merged.items(), key=lambda pair: -(pair[1]["employees"] or -1))
+    for item_qid, entry in ordered:
+        employees = entry["employees"]
+        if employees is not None and (
+            (minimum is not None and employees < minimum) or (maximum is not None and employees > maximum)
+        ):
             continue
-        seen_domains.add(domain)
-        seen_items.add(qid)
-        industry_ids = sorted(
-            {
-                qid_to_industry[industry_qid]
-                for uri in (_value(row, "industries") or "").split("|")
-                if (industry_qid := _entity_id(uri)) in qid_to_industry
-            }
-        )
+        if entry["domain"] in excluded or entry["domain"] in seen_domains:
+            continue
+        seen_domains.add(entry["domain"])
         candidates.append(
             CompanyCandidate(
-                name=_value(row, "itemLabel") or domain,
-                domain=domain,
-                country_code=_value(row, "cc"),
-                industry_ids=industry_ids,
-                employees=_int_value(row, "employees"),
+                name=entry["name"] or entry["domain"],
+                domain=entry["domain"],
+                country_code=entry["cc"],
+                industry_ids=sorted(entry["industries"]),
+                employees=employees,
                 revenue_eur=None,
-                wikidata_qid=qid,
-                lei=_value(row, "lei"),
-                crunchbase_id=_value(row, "cbId"),
+                wikidata_qid=item_qid,
+                lei=entry["lei"],
+                crunchbase_id=entry["cb"],
             )
         )
         if len(candidates) >= query.limit:
             break
     return candidates
-
-
-def _employees_having(minimum: int | None, maximum: int | None) -> str:
-    # Unknown size keeps the candidate (SPEC §1.7.6): COALESCE falls back to the bound itself.
-    low = max(minimum or 0, 0)
-    clauses = [f"COALESCE(MAX(?emp), {low}) >= {low}"]
-    if maximum is not None:
-        clauses.append(f"COALESCE(MAX(?emp), {int(maximum)}) <= {int(maximum)}")
-    return " && ".join(clauses)
 
 
 async def _search_qid(company: CompanyRef, http: HttpClient) -> str | None:
@@ -182,13 +223,15 @@ async def _search_qid(company: CompanyRef, http: HttpClient) -> str | None:
     return qids[0]
 
 
-async def _sparql(http: HttpClient, query: str) -> list[dict[str, Any]]:
-    # Wikidata Query Service: one request at a time, 60 s timeout; 429 honours Retry-After in the HTTP layer.
-    async with shared_lock("wikidata"):
+async def _sparql(
+    http: HttpClient, query: str, *, endpoint: str = SPARQL_URL, timeout_s: float = WIKIDATA_TIMEOUT_S
+) -> list[dict[str, Any]]:
+    # One request at a time per endpoint, 60 s timeout; 429 honours Retry-After in the HTTP layer.
+    async with shared_lock(f"sparql:{endpoint}"):
         response = await http.get(
-            SPARQL_URL,
+            endpoint,
             check_robots=False,
-            timeout=WIKIDATA_TIMEOUT_S,
+            timeout=timeout_s,
             params={"query": query, "format": "json"},
             headers={"Accept": "application/sparql-results+json"},
         )

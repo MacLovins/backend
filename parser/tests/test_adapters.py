@@ -70,7 +70,8 @@ async def test_gdelt_429_opens_circuit_breaker(http: HttpClient) -> None:
         await run(GdeltAdapter(), company, make_plan("news"), http)
     assert api.call_count == 1
 
-    result = await collect(company, make_plan("news"), http=http)
+    async with HttpClient(http.settings.model_copy(update={"adapters": ["gdelt"]})) as gdelt_only:
+        result = await collect(company, make_plan("news"), http=gdelt_only)
     assert [(error.adapter, error.kind) for error in result.errors] == [("gdelt", "rate_limited")]
     assert api.call_count == 1
 
@@ -253,75 +254,104 @@ async def test_careers_html_is_skipped_when_supported_ats_known(http: HttpClient
     assert page.call_count == 0
 
 
-# --- google_news, newsapi, serpapi -------------------------------------------------------------------
+# --- google_news, newsapi, serpapi, rsshub, crunchbase, playwright -------------------------------------
+
+GOOGLE_RSS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Google News</title>
+  <item>
+    <title>DHL deploys AI robotics across supply chain - TechCrunch</title>
+    <link>https://news.google.com/rss/articles/12345</link>
+    <pubDate>Thu, 24 Sep 2026 12:00:00 GMT</pubDate>
+    <description>&lt;a href="https://techcrunch.com/x"&gt;DHL deploys AI robotics&lt;/a&gt; major automation expansion</description>
+    <source url="https://techcrunch.com">TechCrunch</source>
+  </item>
+  <item>
+    <title>DHL deploys AI robotics across supply chain - Reuters</title>
+    <link>https://news.google.com/rss/articles/67890</link>
+    <pubDate>Thu, 24 Sep 2026 13:00:00 GMT</pubDate>
+    <source url="https://reuters.com">Reuters</source>
+  </item>
+  <item>
+    <title>Old DHL story - Example</title>
+    <link>https://news.google.com/rss/articles/old</link>
+    <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+    <source url="https://example.org">Example</source>
+  </item>
+  <item>
+    <title>Undated DHL story - Example</title>
+    <link>https://news.google.com/rss/articles/undated</link>
+    <source url="https://example.org">Example</source>
+  </item>
+</channel></rss>"""
 
 
 @respx.mock
-async def test_google_news_rss_parsing(http: HttpClient) -> None:
+async def test_google_news_rss_parsing_dates_and_editions(http: HttpClient) -> None:
     from leadradar_parser.adapters.news_google import GoogleNewsAdapter
 
-    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
-    <rss version="2.0">
-      <channel>
-        <title>Google News</title>
-        <item>
-          <title>DHL deploys AI robotics across supply chain - TechCrunch</title>
-          <link>https://news.google.com/rss/articles/12345</link>
-          <pubDate>Thu, 24 Sep 2026 12:00:00 GMT</pubDate>
-          <description>DHL announces major robotics and automation expansion.</description>
-          <source url="https://techcrunch.com">TechCrunch</source>
-        </item>
-      </channel>
-    </rss>"""
-
-    respx.get(url__regex=r"^https://news\.google\.com/rss/search.*").mock(
-        return_value=httpx.Response(200, text=rss_xml)
+    feed = respx.get(url__regex=r"^https://news\.google\.com/rss/search.*").mock(
+        return_value=httpx.Response(200, content=GOOGLE_RSS)
     )
-    company = make_company(name="DHL Group", domain="dhl.com")
-    docs = await run(GoogleNewsAdapter(), company, make_plan("news"), http)
+    company = make_company(name="DHL", aliases=["DHL Group"])
+    plan = make_plan("news", languages=["de", "en"], news_topics=["automation", "cost reduction"])
+    docs = await run(GoogleNewsAdapter(), company, plan, http)
 
-    assert len(docs) >= 1
-    assert docs[0].title == "DHL deploys AI robotics across supply chain"
-    assert docs[0].source_name == "google_news"
-    assert docs[0].meta["publisher"] == "TechCrunch"
-    assert "robotics" in docs[0].text
+    assert [doc.title for doc in docs] == ["DHL deploys AI robotics across supply chain", "Undated DHL story"]
+    first, undated = docs
+    assert first.meta["publisher"] == "TechCrunch" and first.meta["headline_only"] is True
+    assert "<a" not in first.text and "automation expansion" in first.text
+    assert first.published_at is not None and first.published_at.isoformat() == "2026-09-24T12:00:00+00:00"
+    assert undated.published_at is None  # unknown date stays None, never "now"
+    params = [call.request.url.params for call in feed.calls]
+    assert {p["ceid"] for p in params} == {"DE:de", "US:en"}
+    assert {p["q"] for p in params} == {'"DHL Group"', '"DHL Group" (automation OR "cost reduction")'}
 
 
 @respx.mock
-async def test_newsapi_adapter_fetch(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_google_news_total_failure_reaches_collect_errors(http: HttpClient) -> None:
+    respx.get(url__regex=r"^https://news\.google\.com/rss/search.*").mock(return_value=httpx.Response(503))
+    result = await collect(make_company(name="DHL Group"), make_plan("news"), http=http)
+    assert ("google_news", "not_found") in {(error.adapter, error.kind) for error in result.errors}
+
+
+@respx.mock
+async def test_newsapi_key_in_header_not_url(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from leadradar_parser.adapters.news_newsapi import NewsApiAdapter
 
-    monkeypatch.setenv("NEWSAPI_KEY", "test-key-123")
+    monkeypatch.setenv("NEWSAPI_KEY", "secret-newsapi-key")
     payload = {
         "status": "ok",
-        "totalResults": 1,
         "articles": [
             {
                 "source": {"id": "reuters", "name": "Reuters"},
                 "title": "DHL expands autonomous warehouse operations",
                 "description": "Logistics giant invests 500M in AI.",
+                "content": "DHL Group said on Friday it will invest 500M in AI… [+2310 chars]",
                 "url": "https://reuters.com/dhl-ai",
                 "publishedAt": "2026-09-25T10:00:00Z",
-            }
+            },
+            {"title": "[Removed]", "url": "https://removed.example"},
         ],
     }
-
-    respx.get(url__regex=r"^https://newsapi\.org/v2/everything.*").mock(
+    route = respx.get(url__regex=r"^https://newsapi\.org/v2/everything.*").mock(
         return_value=httpx.Response(200, json=payload)
     )
-    company = make_company(name="DHL", domain="dhl.com")
-    docs = await run(NewsApiAdapter(), company, make_plan("news"), http)
+    [doc] = await run(NewsApiAdapter(), make_company(name="DHL Group"), make_plan("news"), http)
 
-    assert len(docs) == 1
-    assert docs[0].title == "DHL expands autonomous warehouse operations"
-    assert docs[0].source_name == "newsapi"
+    request = route.calls[0].request
+    assert "secret-newsapi-key" not in str(request.url)
+    assert request.headers["X-Api-Key"] == "secret-newsapi-key"
+    assert doc.meta["publisher"] == "Reuters" and "[+2310 chars]" not in doc.text
+    assert doc.published_at is not None and doc.published_at.isoformat() == "2026-09-25T10:00:00+00:00"
 
 
 @respx.mock
-async def test_serpapi_adapter_fetch(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_serpapi_dates_and_key_redacted_in_errors(
+    http: HttpClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from leadradar_parser.adapters.news_serpapi import SerpApiAdapter
 
-    monkeypatch.setenv("SERPAPI_KEY", "test-serp-key")
+    monkeypatch.setenv("SERPAPI_KEY", "secret-serp-key")
     payload = {
         "news_results": [
             {
@@ -329,73 +359,119 @@ async def test_serpapi_adapter_fetch(http: HttpClient, monkeypatch: pytest.Monke
                 "link": "https://cybernews.com/dhl-mesh",
                 "snippet": "New security posture covers global endpoints.",
                 "source": {"name": "CyberNews"},
-            }
+                "iso_date": "2026-09-22T08:00:00Z",
+            },
+            {"title": "Undated result", "link": "https://example.org/undated"},
         ]
     }
-
     respx.get(url__regex=r"^https://serpapi\.com/search\.json.*").mock(
-        return_value=httpx.Response(200, json=payload)
+        side_effect=[httpx.Response(200, json=payload), httpx.Response(200, json={})]
     )
-    company = make_company(name="DHL", domain="dhl.com")
-    docs = await run(SerpApiAdapter(), company, make_plan("news"), http)
+    docs = await run(SerpApiAdapter(), make_company(name="DHL Group"), make_plan("news"), http)
+    assert [doc.title for doc in docs] == ["DHL integrates cybersecurity mesh architecture", "Undated result"]
+    assert docs[0].published_at is not None and docs[1].published_at is None
 
-    assert len(docs) >= 1
-    assert docs[0].title == "DHL integrates cybersecurity mesh architecture"
-    assert docs[0].source_name == "serpapi"
+    respx.get(url__regex=r"^https://serpapi\.com/search\.json.*").mock(return_value=httpx.Response(401))
+    settings = make_settings_for(http, adapters=["serpapi"])
+    async with HttpClient(settings, cache=False) as uncached:
+        result = await collect(make_company(name="DHL Group"), make_plan("news"), http=uncached)
+    [error] = result.errors
+    assert error.kind == "not_found" and "secret-serp-key" not in error.message
+
+
+def make_settings_for(http: HttpClient, **updates: object):  # type: ignore[no-untyped-def]
+    return http.settings.model_copy(update=updates)
 
 
 @respx.mock
-async def test_rsshub_adapter_fetch(http: HttpClient) -> None:
+async def test_rsshub_requires_self_hosted_instance(
+    http: HttpClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from leadradar_parser.adapters.news_rsshub import RSSHubAdapter
 
-    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
-    <rss version="2.0">
-        <channel>
-            <title>DHL News Feed</title>
-            <item>
-                <title>DHL signs cloud transformation contract</title>
-                <description>Major cloud migration completed.</description>
-                <link>https://rss.example/item1</link>
-                <pubDate>Fri, 26 Sep 2026 09:00:00 GMT</pubDate>
-            </item>
-        </channel>
-    </rss>"""
-    respx.get(url__regex=r"^https://rsshub\.app/.*").mock(return_value=httpx.Response(200, text=rss_xml))
-    company = make_company(name="DHL", domain="dhl.com")
-    docs = await run(RSSHubAdapter(), company, make_plan("news"), http)
+    monkeypatch.delenv("RSSHUB_BASE_URL", raising=False)
+    assert await run(RSSHubAdapter(), make_company(), make_plan("news"), http) == []
 
-    assert len(docs) == 1
-    assert docs[0].title == "DHL signs cloud transformation contract"
-    assert docs[0].source_name == "rsshub"
+    monkeypatch.setenv("RSSHUB_BASE_URL", "https://rsshub.internal/")
+    rss = b"""<rss version="2.0"><channel><item><title>DHL signs cloud contract</title>
+      <description>Major cloud migration.</description><link>https://rss.example/item1</link>
+      <pubDate>Fri, 25 Sep 2026 09:00:00 GMT</pubDate></item></channel></rss>"""
+    respx.get(url__regex=r"^https://rsshub\.internal/google/news/.*").mock(
+        return_value=httpx.Response(200, content=rss)
+    )
+    docs = await run(RSSHubAdapter(), make_company(name="DHL Group"), make_plan("news"), http)
+    assert [doc.title for doc in docs] == ["DHL signs cloud contract"]
+
+
+async def test_feed_parser_rejects_entity_expansion() -> None:
+    from leadradar_parser.adapters.common import parse_feed
+
+    bomb = b"""<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;">]>
+      <rss><channel><item><title>&b;</title></item></channel></rss>"""
+    [item] = parse_feed(bomb)
+    assert "aaaaaaaaaa" not in item.title
 
 
 @respx.mock
-async def test_crunchbase_adapter_fetch(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_crunchbase_uses_header_key_and_identifier_lists(
+    http: HttpClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from leadradar_parser.adapters.registry_crunchbase import CrunchbaseAdapter
 
-    monkeypatch.setenv("CRUNCHBASE_API_KEY", "test-cb-key")
-    cb_data = {
-        "properties": {
-            "title": "DHL Group",
-            "short_description": "Global logistics and shipping powerhouse.",
-            "num_employees_enum": "c_10001_plus",
-        }
-    }
-    respx.get(url__regex=r"^https://api\.crunchbase\.com/api/v4/entities/organizations/.*").mock(
-        return_value=httpx.Response(200, json=cb_data)
+    monkeypatch.setenv("CRUNCHBASE_API_KEY", "secret-cb-key")
+    respx.get("https://api.crunchbase.com/api/v4/autocompletes").mock(
+        return_value=httpx.Response(200, json={"entities": [{"identifier": {"permalink": "dhl"}}]})
     )
-    company = make_company(name="DHL Group", domain="dhl.com")
-    docs = await run(CrunchbaseAdapter(), company, make_plan("registry"), http)
+    entity = respx.get("https://api.crunchbase.com/api/v4/entities/organizations/dhl").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "properties": {
+                    "identifier": {"value": "DHL Group"},
+                    "short_description": "Global logistics.",
+                    "categories": [{"value": "Logistics"}, {"value": "Shipping"}],
+                    "num_employees_enum": "c_10001_max",
+                    "location_identifiers": [{"value": "Bonn"}],
+                }
+            },
+        )
+    )
+    [doc] = await run(CrunchbaseAdapter(), make_company(name="DHL Group"), make_plan("registry"), http)
+    assert "Categories: Logistics, Shipping" in doc.text and "Headquarters: Bonn" in doc.text
+    request = entity.calls[0].request
+    assert request.headers["X-cb-user-key"] == "secret-cb-key" and "secret-cb-key" not in str(request.url)
 
-    assert len(docs) == 1
-    assert "DHL Group" in docs[0].title
-    assert docs[0].source_name == "crunchbase"
 
+async def test_playwright_adapter_without_package_does_nothing(
+    http: HttpClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import builtins
 
-async def test_playwright_adapter_handles_uninstalled_or_missing_browser(http: HttpClient) -> None:
     from leadradar_parser.adapters.web_playwright import PlaywrightAdapter
 
-    company = make_company(name="DHL", domain="dhl.com")
-    docs = await run(PlaywrightAdapter(), company, make_plan("website"), http)
-    # Should not raise exception even if chromium is not installed in the testing environment
-    assert isinstance(docs, list)
+    real_import = builtins.__import__
+
+    def no_playwright(name, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if name.startswith("playwright"):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_playwright)
+    assert await run(PlaywrightAdapter(), make_company(), make_plan("website"), http) == []
+    assert http.network_requests == 0
+
+
+def test_website_keeps_one_copy_per_locale_preferring_primary_domain_and_english() -> None:
+    from leadradar_parser.adapters.web_site import _one_per_locale
+
+    urls = {
+        "https://mydhl.express.dhl/al/en/about": None,
+        "https://www.dhl.com/de-de/about": None,
+        "https://www.dhl.com/global-en/about": None,
+        "https://www.dhl.com/fr-en/about": None,
+        "https://www.dhl.com/global-en/strategy": None,
+    }
+    assert _one_per_locale(urls, "dhl.com") == [
+        "https://www.dhl.com/global-en/about",
+        "https://www.dhl.com/global-en/strategy",
+    ]

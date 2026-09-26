@@ -1,5 +1,4 @@
 import asyncio
-import os
 from time import monotonic
 
 import httpx
@@ -34,7 +33,7 @@ async def _collect(
     for adapter_id, adapter in ADAPTERS.items():
         if adapter_id not in http.settings.adapters or adapter.source_type not in plan.source_types:
             continue
-        if adapter.requires_env and not os.getenv(adapter.requires_env):
+        if adapter.requires_env and not http.settings.env(adapter.requires_env):
             errors.append(
                 SourceError(adapter=adapter_id, kind="disabled", message=f"{adapter.requires_env} is not set")
             )

@@ -1,5 +1,3 @@
-import os
-
 from ..contracts import AdapterInfo
 from ..settings import ParserSettings
 from .base import SourceAdapter
@@ -41,7 +39,7 @@ def list_adapters(settings: ParserSettings | None = None) -> list[AdapterInfo]:
             id=adapter.id,
             source_type=adapter.source_type,
             enabled=adapter.id in enabled
-            and (adapter.requires_env is None or bool(os.getenv(adapter.requires_env))),
+            and (adapter.requires_env is None or bool(settings.env(adapter.requires_env))),
             requires_key=adapter.requires_env,
             rate_limit=adapter.rate_limit,
         )
