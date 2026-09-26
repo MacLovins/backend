@@ -251,3 +251,94 @@ async def test_careers_html_is_skipped_when_supported_ats_known(http: HttpClient
     company = make_company(careers_url="https://example.com/careers", ats={"kind": "lever", "token": "x"})
     assert await run(CareersHtmlAdapter(), company, make_plan("jobs"), http) == []
     assert page.call_count == 0
+
+
+# --- google_news, newsapi, serpapi -------------------------------------------------------------------
+
+
+@respx.mock
+async def test_google_news_rss_parsing(http: HttpClient) -> None:
+    from leadradar_parser.adapters.news_google import GoogleNewsAdapter
+
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>Google News</title>
+        <item>
+          <title>DHL deploys AI robotics across supply chain - TechCrunch</title>
+          <link>https://news.google.com/rss/articles/12345</link>
+          <pubDate>Thu, 24 Sep 2026 12:00:00 GMT</pubDate>
+          <description>DHL announces major robotics and automation expansion.</description>
+          <source url="https://techcrunch.com">TechCrunch</source>
+        </item>
+      </channel>
+    </rss>"""
+
+    respx.get(url__regex=r"^https://news\.google\.com/rss/search.*").mock(
+        return_value=httpx.Response(200, text=rss_xml)
+    )
+    company = make_company(name="DHL Group", domain="dhl.com")
+    docs = await run(GoogleNewsAdapter(), company, make_plan("news"), http)
+
+    assert len(docs) >= 1
+    assert docs[0].title == "DHL deploys AI robotics across supply chain"
+    assert docs[0].source_name == "google_news"
+    assert docs[0].meta["publisher"] == "TechCrunch"
+    assert "robotics" in docs[0].text
+
+
+@respx.mock
+async def test_newsapi_adapter_fetch(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from leadradar_parser.adapters.news_newsapi import NewsApiAdapter
+
+    monkeypatch.setenv("NEWSAPI_KEY", "test-key-123")
+    payload = {
+        "status": "ok",
+        "totalResults": 1,
+        "articles": [
+            {
+                "source": {"id": "reuters", "name": "Reuters"},
+                "title": "DHL expands autonomous warehouse operations",
+                "description": "Logistics giant invests 500M in AI.",
+                "url": "https://reuters.com/dhl-ai",
+                "publishedAt": "2026-09-25T10:00:00Z",
+            }
+        ],
+    }
+
+    respx.get(url__regex=r"^https://newsapi\.org/v2/everything.*").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    company = make_company(name="DHL", domain="dhl.com")
+    docs = await run(NewsApiAdapter(), company, make_plan("news"), http)
+
+    assert len(docs) == 1
+    assert docs[0].title == "DHL expands autonomous warehouse operations"
+    assert docs[0].source_name == "newsapi"
+
+
+@respx.mock
+async def test_serpapi_adapter_fetch(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from leadradar_parser.adapters.news_serpapi import SerpApiAdapter
+
+    monkeypatch.setenv("SERPAPI_KEY", "test-serp-key")
+    payload = {
+        "news_results": [
+            {
+                "title": "DHL integrates cybersecurity mesh architecture",
+                "link": "https://cybernews.com/dhl-mesh",
+                "snippet": "New security posture covers global endpoints.",
+                "source": {"name": "CyberNews"},
+            }
+        ]
+    }
+
+    respx.get(url__regex=r"^https://serpapi\.com/search\.json.*").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    company = make_company(name="DHL", domain="dhl.com")
+    docs = await run(SerpApiAdapter(), company, make_plan("news"), http)
+
+    assert len(docs) >= 1
+    assert docs[0].title == "DHL integrates cybersecurity mesh architecture"
+    assert docs[0].source_name == "serpapi"

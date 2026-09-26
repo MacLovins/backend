@@ -265,8 +265,10 @@ Head of Automation, Head of Process Excellence.
 | Настройка услуг, вопросов, весов, полярности, источников, ICP, правил, профиля скоринга через UI | Outreach, алерты, HubSpot — надстройки после ядра, §4.13 (U8) |
 | Импорт CSV, ручное добавление, автопоиск по ICP (Wikidata) | ML-модель скоринга (этап 2: нужна разметка и исходы CRM) |
 | Сбор: GDELT, сайт и newsroom компании, ATS-вакансии, Wikidata | Crunchbase API: платный, в 2026 бесплатного нет — адаптер на этапе 2, в MVP заменён Wikidata/GLEIF и импортом CSV-выгрузки |
-| Граф LangGraph: prefilter → Gemini extract → verify → score | Агент-исследователь, LLM-судья, самосогласованность |
-| Объяснимый скор, «почему сейчас», карточки сигналов с цитатами и ссылками | Playwright / JS-рендеринг (P2), RSSHub, SerpAPI |
+| Сбор Data Layer: Google News RSS, GDELT, NewsAPI, SerpAPI, ATS, Wikidata | Crunchbase direct API |
+| Граф LangGraph: prefilter → Gemini/OpenAI extract → verify → score | Агент-исследователь с открытым поиском |
+| Объяснимый скор, «почему сейчас», карточки сигналов с цитатами и ссылками | Playwright / JS-рендеринг (P2 fallback) |
+| Outreach Generation: генерация персонализированных писем/InMail по сигналам | HubSpot двусторонняя синхронизация (этап 2) |
 | Живой прогресс прогонов (SSE + polling fallback) | Мультитенантность (колонка `org_id` уже есть) |
 | Фидбек по сигналам и метрика precision | SSO, MFA, refresh-токены |
 | Вход email + пароль, роли `admin` и `sales` | i18n интерфейса |
