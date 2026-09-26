@@ -26,7 +26,13 @@ from leadradar_core.modules.alerts.schemas import (
     RulePreviewOut,
 )
 from leadradar_core.modules.intelligence.models import Document
-from leadradar_core.modules.leads.trends import STRENGTH_RANK, TREND_LABELS, WHY_IT_MATTERS, trend_kind
+from leadradar_core.modules.leads.trends import (
+    STRENGTH_RANK,
+    TREND_LABELS,
+    WHY_IT_MATTERS,
+    lead_link,
+    trend_kind,
+)
 from sqlalchemy import Text, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from structlog import get_logger
@@ -60,8 +66,7 @@ class Draft:
 
 
 def lead_url(public_origin: str, company_id: UUID | str, service_id: UUID | str | None) -> str:
-    base = f"{public_origin.rstrip('/')}/leads/{company_id}"
-    return f"{base}?service={service_id}" if service_id else base
+    return lead_link(public_origin, company_id, service_id)
 
 
 def _label(kind: str) -> str:

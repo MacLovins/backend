@@ -96,7 +96,7 @@ async def test_telegram_alert_is_sent_escaped_and_token_never_leaks():
     body = json.loads(route.calls[0].request.content)
     assert body["chat_id"] == "42" and body["parse_mode"] == "HTML"
     assert "Acme &lt;Logistics&gt;" in body["text"] and "Runs agentic AI" in body["text"]
-    assert "https://radar.test/leads/" in body["text"]
+    assert "https://radar.test/companies/" in body["text"]
 
     route.mock(return_value=httpx.Response(401, json={"ok": False, "description": "Unauthorized"}))
     with pytest.raises(RuntimeError) as err:
@@ -195,7 +195,7 @@ async def test_hubspot_creates_company_with_score_and_evidence_note():
     assert created["domain"] == "acme.example" and created["leadradar_tier"] == "hot"
     assert created["leadradar_priority"] == 71.5 and created["name"] == "Acme <Logistics>"
     assert created["leadradar_why_now"] == "• Runs agentic AI in operations."
-    assert created["leadradar_url"].startswith("https://radar.test/leads/")
+    assert created["leadradar_url"].startswith("https://radar.test/companies/")
     # the same property set the manual push writes (modules.integrations.hubspot.PROPERTIES)
     assert {p["name"] for p in hubspot.PROPERTIES} <= set(created)
     note = json.loads(routes["note"].calls[0].request.content)

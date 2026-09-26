@@ -461,7 +461,7 @@ def test_match_scope_and_signal_trigger():
     assert draft.body.startswith("3 new job postings match 'RPA developer'")
     assert '"We are hiring RPA developers in Bonn" — greenhouse' in draft.body
     assert "Why it matters: hiring for these roles" in draft.body
-    assert draft.url == f"https://radar.test/leads/{company}?service={service}"
+    assert draft.url == f"https://radar.test/companies/{company}?service={service}"
 
 
 def test_match_tier_trigger():
@@ -553,7 +553,7 @@ async def test_consumer_creates_notifications_and_sends_email(org_id, user_id, f
     ]
     assert mine[0].event_id == ev.id and mine[0].company_id == seeded.company_id
     assert mine[0].service_id == seeded.service_id and mine[0].read_at is None
-    assert mine[0].url == f"https://radar.test/leads/{seeded.company_id}?service={seeded.service_id}"
+    assert mine[0].url == f"https://radar.test/companies/{seeded.company_id}?service={seeded.service_id}"
     theirs = await user_notifications(other_user)
     assert [n.delivered for n in theirs] == [{}]  # in-app only: no e-mail attempted
     _, to, subject, content = fake_smtp.sent[-1]
@@ -741,7 +741,7 @@ async def test_jobs_threshold_task_notifies_once_per_window(org_id, user_id, fak
     assert n.kind == "jobs_threshold" and n.company_id == busy.company_id and n.service_id == service_id
     assert n.title == "Hiring spike at Busy Co: 3 job postings" and "threshold: 3" in n.body
     assert n.delivered == {"email": "sent"} and n.url.endswith(
-        f"/leads/{busy.company_id}?service={service_id}"
+        f"/companies/{busy.company_id}?service={service_id}"
     )
 
     # a new window: the postings are still within 24 h of `now`, the last notification is not

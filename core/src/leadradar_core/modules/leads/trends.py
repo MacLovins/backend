@@ -154,3 +154,9 @@ def trends_from_rows(rows: Iterable[Any]) -> dict[tuple[Any, Any], list[TrendOut
     for trends in out.values():
         trends.sort(key=lambda t: (-t.count, t.kind))
     return out
+
+
+def lead_link(public_origin: str, company_id: object, service_id: object | None = None) -> str:
+    """The lead page in the SPA (`/companies/:companyId?service=`), used by alerts, e-mails and HubSpot."""
+    url = f"{public_origin.rstrip('/')}/companies/{company_id}"
+    return f"{url}?service={service_id}" if service_id else url

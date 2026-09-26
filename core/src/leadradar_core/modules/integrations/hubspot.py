@@ -16,6 +16,7 @@ from typing import Any, ClassVar
 from uuid import UUID
 
 import httpx
+from leadradar_core.modules.leads.trends import lead_link as _lead_link
 
 BASE_URL = "https://api.hubapi.com"
 GROUP = "leadradar"
@@ -96,8 +97,7 @@ class PushResult:
 
 def lead_link(public_origin: str, company_id: UUID | str, service_id: UUID | str | None) -> str:
     """The lead page in the SPA, the same link the alerts use."""
-    url = f"{public_origin.rstrip('/')}/leads/{company_id}"
-    return f"{url}?service_id={service_id}" if service_id else url
+    return _lead_link(public_origin, company_id, service_id)
 
 
 def reasons_from_payload(rows: list[Any] | None) -> list[Reason]:

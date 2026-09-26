@@ -15,6 +15,7 @@ from structlog import get_logger
 
 from leadradar_core.modules.activity import events
 from leadradar_core.modules.activity.dispatcher import Event
+from leadradar_core.modules.leads.trends import lead_link
 from leadradar_core.settings import AppSettings
 
 log = get_logger(__name__)
@@ -33,7 +34,7 @@ def is_alert(event: Event) -> bool:
 
 
 def _lead_link(public_origin: str, payload: dict[str, Any]) -> str:
-    return f"{public_origin.rstrip('/')}/leads/{payload.get('company_id')}?service_id={payload.get('service_id')}"
+    return lead_link(public_origin, payload.get("company_id"), payload.get("service_id"))
 
 
 def render(event: Event, public_origin: str) -> tuple[str, list[str]]:

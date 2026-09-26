@@ -54,7 +54,7 @@ def snapshot(**overrides) -> LeadSnapshot:
                 question="Is the company running AI initiatives?",
             )
         ],
-        "lead_url": "http://localhost:5173/leads/1?service_id=2",
+        "lead_url": "http://localhost:5173/companies/1?service=2",
     }
     return LeadSnapshot(**(data | overrides))
 
@@ -116,7 +116,7 @@ async def test_existing_domain_is_updated_without_touching_name(hubspot) -> None
     assert not create.called
     props = json.loads(patch.calls.last.request.content)["properties"]
     assert "name" not in props and "domain" not in props
-    assert props["leadradar_url"].endswith("?service_id=2")
+    assert props["leadradar_url"].endswith("?service=2")
     assert props["leadradar_why_now"] == "• Runs agentic AI in customer service"
 
 
@@ -238,7 +238,7 @@ async def test_push_sends_active_evidence_and_remembers_the_record(client, hubsp
     assert res.json()["hubspot_company_id"] == "901" and res.json()["created"] is True
     note = json.loads(hubspot["notes"].calls.last.request.content)["properties"]["hs_note_body"]
     assert "Acme runs agentic AI" in note and "rejected quote" not in note
-    assert f"/leads/{company_id}?service_id={service_id}" in note
+    assert f"/companies/{company_id}?service={service_id}" in note
 
     async with async_session_factory() as session:
         company = await session.get(Company, company_id)
