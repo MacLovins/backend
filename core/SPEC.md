@@ -89,9 +89,10 @@
 | `POST /companies/import` (multipart, `?mapping=default\|crunchbase\|custom`) | любой | Импорт CSV → отчёт | P0/P1 |
 | `GET /companies/{id}/documents?source_type=` | любой | Просканированные источники | P0 |
 | `POST /discovery/search` · `POST /discovery/accept` | любой | Автопоиск по ICP | P0 |
-| `POST /runs` · `GET /runs` · `GET /runs/{id}` | любой | Прогоны анализа | P0 |
+| `POST /runs` · `GET /runs` · `GET /runs/{id}` | любой | Прогоны анализа: `{kind: analyze\|refresh, mode: incremental\|full, company_ids (≥ 1), service_ids}` → `queued`; `full` — пересбор и повторное извлечение без учёта fingerprint | P0 |
 | `GET\|POST /runs/{id}/events` | любой | SSE-поток прогона | P0 |
-| `POST /runs/{id}/cancel` · `POST /runs/{id}/retry-failed` | любой | Управление прогоном | P0 |
+| `POST /runs/{id}/cancel` · `POST /runs/{id}/retry-failed` | любой | Управление прогоном (409 для завершённого прогона; worker останавливает граф между стадиями) | P0 |
+| `POST /leads/{company_id}/outreach` → 202 · `GET /leads/{company_id}/outreach/{job_id}` | любой | Черновик outreach (CO-A1): задача worker `generate_outreach`, результат — опросом | После ядра |
 | `GET /leads?service_id=&tier=&country=&industry=&min_priority=&has_new=&q=&sort=&page=&page_size=` | любой | Рейтинг | P0 |
 | `GET /leads/{company_id}?service_id=` | любой | Карточка лида | P0 |
 | `GET /leads/export.csv?service_id=&…` | любой | CSV-экспорт | P1 |
@@ -136,7 +137,7 @@
 
 **SSE** (`EventSourceResponse` из `fastapi.sse`, FastAPI ≥ 0.135). События: `run.progress` `{done, total, failed, paused}` ·
 `company.stage` `{company_id, service_id?, stage, status, message}` · `company.done` `{company_id, scores: [{service_id, priority, tier}]}` ·
-`run.finished` `{status}`. У каждого события `id` = `run_event.id`: при переподключении с `Last-Event-ID` сначала отдаётся
+`run.finished` `{status}`. Имена и данные одинаковы в живом потоке и в реплее (имя выводится из `stage`/`status` строки `run_event`). У каждого события `id` = `run_event.id`: при переподключении с `Last-Event-ID` сначала отдаётся
 реплей из БД. POST-вариант того же пути нужен для клиентов за прокси, которые буферизуют GET-SSE.
 
 #### 1.4.2 Вход и выход worker (Taskiq)

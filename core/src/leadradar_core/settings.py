@@ -30,7 +30,8 @@ class AppSettings(BaseSettings):
     FEATURE_OUTREACH: bool = True
     FEATURE_ALERTS: bool = False
     FEATURE_HUBSPOT: bool = False
-    EMBEDDED_WORKER: bool = True
+    # True: the API process runs worker tasks itself (dev without a worker). Production: a separate worker.
+    EMBEDDED_WORKER: bool = False
 
     # Scheduler (CO-22) and outbox dispatcher (CO-17)
     RESUME_PAUSED_CRON: str = "*/15 * * * *"

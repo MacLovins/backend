@@ -39,7 +39,7 @@ async def _shutdown(state: TaskiqState) -> None:
 
 
 # register tasks on the broker (the worker CLI imports only this module)
-from leadradar_core.worker import tasks  # noqa: E402, F401
+from leadradar_core.worker import outreach, tasks  # noqa: E402, F401
 
 # periodic tasks (CO-22): `taskiq scheduler leadradar_core.worker.broker:scheduler` reads their schedule labels
 scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker)])
