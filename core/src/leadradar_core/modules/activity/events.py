@@ -8,6 +8,7 @@ Event types and payloads (the /activity feed and the add-ons read them):
 - lead.tier_changed   a new current lead score whose tier differs from the previous current one (or first score)
 - run.finished        an analysis run reached a terminal status
 - feedback.created    a user voted on a signal or a lead
+- crm.pushed          a lead was pushed to a CRM by hand (POST /leads/{id}/push/hubspot)
 """
 
 from typing import Any
@@ -26,6 +27,7 @@ SIGNAL_DETECTED = "signal.detected"
 LEAD_TIER_CHANGED = "lead.tier_changed"
 RUN_FINISHED = "run.finished"
 FEEDBACK_CREATED = "feedback.created"
+CRM_PUSHED = "crm.pushed"
 
 WHY_NOW_LIMIT = 3
 

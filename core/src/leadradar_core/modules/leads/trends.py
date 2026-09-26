@@ -56,6 +56,19 @@ _LAYOFF_RE = re.compile("|".join(re.escape(t) for t in LAYOFF_TERMS), re.IGNOREC
 STRENGTH_RANK = {"weak": 1, "moderate": 2, "strong": 3}
 RANK_STRENGTH = {v: k for k, v in STRENGTH_RANK.items()}
 
+# Short labels for titles and e-mails; the SPA has its own copy for chips.
+TREND_LABELS: dict[str, str] = {
+    "hiring": "Hiring",
+    "layoffs": "Layoffs",
+    "cost_cutting": "Cost cutting",
+    "cyber_incident": "Cyber incident",
+    "leadership_change": "Leadership change",
+    "growth": "Growth",
+    "ai_automation": "AI & automation",
+    "compliance": "Compliance",
+    "distress": "Financial distress",
+}
+
 WHY_IT_MATTERS: dict[str, str] = {
     "hiring": "hiring for these roles usually means budget for tooling and a team that needs to deliver.",
     "layoffs": "job cuts come with pressure to keep output up with fewer people — automation budgets open.",

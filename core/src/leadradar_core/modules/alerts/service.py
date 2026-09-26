@@ -6,6 +6,7 @@ callable that the caller provides (the SMTP path lives in integrations.alerts), 
 network code and in-app notifications work without SMTP.
 """
 
+import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -25,7 +26,7 @@ from leadradar_core.modules.alerts.schemas import (
     RulePreviewOut,
 )
 from leadradar_core.modules.intelligence.models import Document
-from leadradar_core.modules.leads.trends import STRENGTH_RANK, WHY_IT_MATTERS, trend_kind
+from leadradar_core.modules.leads.trends import STRENGTH_RANK, TREND_LABELS, WHY_IT_MATTERS, trend_kind
 from sqlalchemy import Text, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from structlog import get_logger
@@ -64,7 +65,16 @@ def lead_url(public_origin: str, company_id: UUID | str, service_id: UUID | str 
 
 
 def _label(kind: str) -> str:
-    return kind.replace("_", " ")
+    return TREND_LABELS.get(kind) or kind.replace("_", " ").capitalize()
+
+
+def _gist(text: str | None, limit: int = 90) -> str:
+    """First sentence of the summary, shortened for a title."""
+    text = " ".join((text or "").split())
+    if not text:
+        return ""
+    first = re.split(r"(?<=[.!?])\s", text, maxsplit=1)[0]
+    return first if len(first) <= limit else first[: limit - 1].rstrip() + "…"
 
 
 def render_signal(event: Event, public_origin: str) -> Draft:
@@ -72,7 +82,8 @@ def render_signal(event: Event, public_origin: str) -> Draft:
     kind = trend_kind(p.get("category"), p.get("summary"), p.get("quote"))
     company = p.get("company_name") or p.get("domain") or "a company"
     label = _label(kind) if kind else _label(p.get("category") or "new")
-    title = f"{label.capitalize()} signal at {company}"
+    gist = _gist(p.get("summary"))
+    title = f"{label} at {company}: {gist}" if gist else f"{label} signal at {company}"
     lines = [p.get("summary") or ""]
     if p.get("quote"):
         source = f" — {p['source_name']}" if p.get("source_name") else ""

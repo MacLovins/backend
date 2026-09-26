@@ -454,7 +454,7 @@ def test_match_scope_and_signal_trigger():
 
     draft = alerts_service.match_event(rule(org, user), ev, origin)
     assert (
-        draft.title == "Hiring signal at DHL Group"
+        draft.title == "Hiring at DHL Group: 3 new job postings match 'RPA developer'"
         and draft.kind == "signal"
         and draft.trend_kind == "hiring"
     )
@@ -557,7 +557,9 @@ async def test_consumer_creates_notifications_and_sends_email(org_id, user_id, f
     theirs = await user_notifications(other_user)
     assert [n.delivered for n in theirs] == [{}]  # in-app only: no e-mail attempted
     _, to, subject, content = fake_smtp.sent[-1]
-    assert to == email and subject == "[LeadRadar] Hiring signal at DHL Group"
+    assert (
+        to == email and subject == "[LeadRadar] Hiring at DHL Group: 3 new job postings match 'RPA developer'"
+    )
     assert "Why it matters" in content and mine[0].url in content
     assert ("login", "u") in fake_smtp.sent and len([x for x in fake_smtp.sent if x[0] == "send"]) == 1
 
@@ -617,7 +619,10 @@ async def test_notifications_api(org_id, user_id, client):
 
     listed = await client.get("/api/v1/notifications", headers=h)
     assert listed.status_code == 200, listed.text
-    assert len(listed.json()) == 3 and listed.json()[0]["title"] == "Hiring signal at DHL Group"
+    assert (
+        len(listed.json()) == 3
+        and listed.json()[0]["title"] == "Hiring at DHL Group: signal 2"  # newest first
+    )
     first = listed.json()[0]
     assert first["kind"] == "signal" and first["trend_kind"] == "hiring" and first["read_at"] is None
     assert first["rule_id"] == str(r.id) and first["company_id"] == str(seeded.company_id)
@@ -683,7 +688,10 @@ async def test_preview_replays_the_last_30_days(org_id, user_id, client):
 
     everything = await preview({"kind": "signal"})
     assert everything["count"] == 4 and len(everything["notifications"]) == 4
-    assert everything["notifications"][0]["title"] == "Hiring signal at DHL Group"
+    assert (
+        everything["notifications"][0]["title"]
+        == "Hiring at DHL Group: 3 new job postings match 'RPA developer'"
+    )
     assert everything["notifications"][0]["occurred_at"].startswith(str(NOW.date()))
     assert (await preview({"kind": "signal", "categories": ["hiring"]}))["count"] == 3
     assert (await preview({"kind": "signal", "min_strength": "moderate"}))["count"] == 3

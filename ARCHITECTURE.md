@@ -546,7 +546,7 @@ P1 и P3 спят в разное время.
 |---|---|---|---|
 | Outreach-черновики (email, LinkedIn InMail) | `ai.outreach` (промпт) + `core` endpoint + модалка во frontend | Сигналы с цитатами, `service.value_proposition`, LLM-шлюз | 3–4 ч |
 | Алерты (Telegram bot API / email) | `core.integrations.alerts` | Outbox `domain_event` + диспетчер потребителей в worker | 2–3 ч |
-| HubSpot (push компании, свойств скора и заметки с доказательствами) | `core.integrations.hubspot` | Outbox, CSV-экспорт, формат `why_now` | 3–4 ч |
+| HubSpot (push компании, свойств скора и заметки с доказательствами) | `core.modules.integrations` (общий клиент, `GET /integrations/hubspot`, ручной `POST /leads/{id}/push/hubspot` → событие `crm.pushed`) + потребитель `core.integrations.hubspot` (`lead.tier_changed`) — **сделано**, за `FEATURE_HUBSPOT` | Outbox, CSV-экспорт, формат `why_now` | 3–4 ч |
 
 ### 4.14 Риски и меры
 
