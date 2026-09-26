@@ -40,12 +40,11 @@ def rule(kind: str, condition: dict, action: str = "exclude", cap_value: float |
 # --- evidence value -------------------------------------------------------------------------------
 
 
-def test_decay_halves_at_half_life_and_ignores_undated_and_registry():
+def test_decay_halves_at_half_life_and_ignores_registry():
     profile, q = make_profile(), make_question()
     assert decay_factor(make_signal(q, source_type="jobs", event_date=days_ago(45)), profile, NOW) == 0.5
     assert decay_factor(make_signal(q, source_type="news", event_date=days_ago(240)), profile, NOW) == 0.25
     assert decay_factor(make_signal(q, source_type="registry", event_date=days_ago(999)), profile, NOW) == 1.0
-    assert decay_factor(make_signal(q, event_date=None, published_at=None), profile, NOW) == 1.0
     # future event date (a target year slipped through) is clamped to age 0
     assert decay_factor(make_signal(q, source_type="news", event_date=days_ago(-30)), profile, NOW) == 1.0
     # event_date wins over published_at; published_at is the fallback
@@ -55,6 +54,24 @@ def test_decay_halves_at_half_life_and_ignores_undated_and_registry():
         )
         == 0.5
     )
+
+
+def test_undated_signals_decay_from_fetch_date_with_a_minimum_age():
+    profile, q = make_profile(undated_age_days=90), make_question()
+    undated = {"source_type": "news", "event_date": None, "published_at": None, "flags": {"undated"}}
+    # fetched today: assumed 90 days old, not "today" (news half-life 120)
+    fresh = make_signal(q, **undated, fetched_at=NOW)
+    assert decay_factor(fresh, profile, NOW) == pytest.approx(0.5 ** (90 / 120))
+    # fetched 240 days ago: the document age wins
+    old = make_signal(q, **undated, fetched_at=NOW - 240 * DAY)
+    assert decay_factor(old, profile, NOW) == 0.25
+    # a stored signal without fetched_at falls back to detected_at
+    stored = make_signal(q, **undated, detected_at=NOW - 360 * DAY)
+    assert decay_factor(stored, profile, NOW) == 0.125
+    # undated evidence never outweighs the same evidence dated today
+    dated = make_signal(q, source_type="news", event_date=NOW.date())
+    assert evidence_value(fresh, profile, NOW) < evidence_value(dated, profile, NOW)
+    assert "undated" in fresh.flags  # the data-gap flag survives scoring
 
 
 def test_reliability_comes_from_profile_and_headline_only_downgrades():
@@ -85,7 +102,8 @@ def test_aggregation_helpers():
 def test_dhl_breakdown_from_spec():
     # SPEC §1.7.5 example: points 2.49 + 1.22 + 1.32 positive, 0.96 negative, fit 92.
     # The spec prints priority 69.2, but the formula gives 69.149 → 69.1 (intent and risk match exactly).
-    profile = make_profile()
+    # (printed with the original τ_intent = 3; the default is now 5 — see test_weight_change_flips_a_tier)
+    profile = make_profile(tau_intent=3.0)
     intent, risk = saturate(2.49 + 1.22 + 1.32, profile.tau_intent), saturate(0.96, profile.tau_risk)
     assert round(intent, 1) == 81.3
     assert round(risk, 1) == 38.1
@@ -152,16 +170,16 @@ def test_golden_scenario(ia):
     company = make_company(revenue_eur=None)
     score = score_company(company, bundle, signals, NOW)
 
-    # fit: industry matched (2) + revenue unknown (0.5 × 1) out of 3 → 83.3
-    assert score.fit == 83.3
-    # intent: 100 × (1 − exp(−(3 + 0.85952 + 1.215) / 3)) = 81.58
-    assert score.intent == 81.6
+    # fit: industry matched (2) + revenue unknown (0.5 × 1) out of 3 → share 0.8333 → 20 + 80 × 0.8333 = 86.7
+    assert score.fit == 86.7
+    # intent: 100 × (1 − exp(−(3 + 0.85952 + 1.215) / 5)) = 63.76
+    assert score.intent == 63.8
     # risk: 100 × (1 − exp(−0.65 / 2)) = 27.75
     assert score.risk == 27.7
-    # priority: 100 × 0.8333^0.4 × 0.8158^0.6 × (1 − 0.5 × 0.2775) = 70.86
-    assert score.priority == 70.9
-    assert score.tier == "hot"
-    assert not score.disqualified
+    # priority: 100 × 0.8667^0.4 × 0.6376^0.6 × (1 − 0.5 × 0.2775) = 62.09
+    assert score.priority == 62.1
+    assert score.tier == "warm"
+    assert not score.disqualified and not score.outside_icp
 
     points = {c.key: (c.strength, c.points) for c in score.breakdown}
     assert points == {
@@ -208,14 +226,74 @@ def test_signal_filters(ia):
     assert score_company(company, bundle, signals + noise, NOW) == base
 
 
-def test_one_event_repeated_counts_at_most_three_times():
+def _event(q, n: int, **overrides):
+    """n-th distinct event: its own quote, summary, URL and a date two months apart from the others."""
+    data = {
+        "source_type": "news",
+        "strength": "weak",
+        "quote": f"Milestone {n}: "
+        + [
+            "rolls out RPA bots",
+            "opens an AI lab",
+            "hires a CDO",
+            "moves to S/4HANA",
+            "launches process mining",
+            "automates invoices",
+        ][n % 6],
+        "summary": f"Event number {n} about automation.",
+        "url": f"https://news{n}.example.com/story",
+        "event_date": days_ago(60 * n),
+        "published_at": NOW - 60 * n * DAY,
+    }
+    return make_signal(q, **(data | overrides))
+
+
+def test_distinct_events_count_at_most_three_times():
+    q = make_question()
+    bundle = make_bundle(questions=[q], scoring=make_profile(half_life_days={"news": None}))
+    three = score_company(make_company(), bundle, [_event(q, n) for n in range(3)], NOW)
+    six = score_company(make_company(), bundle, [_event(q, n) for n in range(6)], NOW)
+    # weak news: v = 0.35 × 1.0 × 0.8 = 0.28 each
+    assert six.breakdown[0].strength == three.breakdown[0].strength == round(1 - 0.72**3, 2)
+    assert len(six.breakdown[0].signal_ids) == 3
+
+
+def test_reprints_of_one_story_count_once():
+    """AI-15: ten outlets reprinting one story are one event, not ten independent signals."""
     q = make_question()
     bundle = make_bundle(questions=[q])
-    weak = {"source_type": "news", "strength": "weak"}  # v = 0.35 × 0.8 = 0.28
-    three = score_company(make_company(), bundle, [make_signal(q, **weak) for _ in range(3)], NOW)
-    ten = score_company(make_company(), bundle, [make_signal(q, **weak) for _ in range(10)], NOW)
-    assert ten.breakdown[0].strength == three.breakdown[0].strength == round(1 - 0.72**3, 2)
-    assert len(ten.breakdown[0].signal_ids) == 3
+    story = {"source_type": "news", "strength": "weak", "confidence": 0.8, "event_date": NOW.date()}
+    headlines = [
+        "Lufthansa Group orders 20 Boeing 737 MAX 10s",
+        "Lufthansa Group orders 20 Boeing 737 Max 10 jets",
+        "Lufthansa Group To Grow Boeing 737 MAX Fleet By Securing 20 MAX 10 Orders",
+    ]
+    same_source = [make_signal(q, **story, quote=headlines[0]) for _ in range(10)]  # one URL, collected 10×
+    single = score_company(make_company(), bundle, same_source[:1], NOW).breakdown[0]
+    many = score_company(make_company(), bundle, same_source, NOW).breakdown[0]
+    assert many.strength == single.strength == round(0.35 * 0.8 * 0.8, 2)  # no boost from one source
+    assert len(many.signal_ids) == 10  # every reprint stays visible as evidence
+
+    # the same story from three independent outlets: counted once, confidence 1 − 0.2³ → capped at 0.98
+    outlets = [
+        make_signal(
+            q, **story, quote=h, url=f"https://outlet{i}.example.com/a", summary="Orders 20 MAX 10 jets."
+        )
+        for i, h in enumerate(headlines)
+    ]
+    corroborated = score_company(make_company(), bundle, outlets, NOW).breakdown[0]
+    assert corroborated.strength == round(0.35 * 0.98 * 0.8, 2)
+    assert single.strength < corroborated.strength < round(1 - (1 - 0.35 * 0.8 * 0.8) ** 3, 2)
+
+    # a different event (other numbers, two months later) is independent evidence
+    other = make_signal(
+        q,
+        **(story | {"event_date": days_ago(60)}),
+        quote="Lufthansa Group orders ten Airbus A350",
+        url="https://x.example/b",
+    )
+    both = score_company(make_company(), bundle, [*outlets, other], NOW).breakdown[0]
+    assert both.strength > corroborated.strength
 
 
 # --- properties ---------------------------------------------------------------------------------
@@ -274,6 +352,28 @@ def test_fit_zero_means_priority_zero(ia):
     assert (score.fit, score.priority, score.tier) == (0.0, 0.0, "cold")
     assert score.intent > 0  # signals are still visible
     assert ("fit", "Outside ICP: Country in DE") in [(r.polarity, r.text) for r in score.why_now]
+    # an explicit status, so the UI can tell "outside ICP" from "in ICP, no intent"
+    assert score.outside_icp
+    assert score.rule_hits == [
+        {
+            "rule_id": "icp:must_have",
+            "name": "Outside ICP: Country in DE",
+            "kind": "icp",
+            "action": "flag",
+            "cap_value": None,
+        }
+    ]
+
+
+def test_no_nice_to_have_match_keeps_the_fit_floor(ia):
+    """Passing every must-have but matching no nice-to-have is still inside the ICP: Fit = floor, not 0."""
+    bundle, signals = ia
+    company = make_company(industry_ids=["retail"], revenue_eur=1_000_000)
+    score = score_company(company, bundle, signals, NOW)
+    assert score.fit == 20.0 and not score.outside_icp and score.rule_hits == []
+    assert score.priority > 0
+    no_floor = bundle.model_copy(update={"scoring": make_profile(fit_floor=0)})
+    assert score_company(company, no_floor, signals, NOW).fit == 0.0
 
 
 def test_exclude_cap_and_flag_rules(ia):
@@ -299,13 +399,13 @@ def test_exclude_cap_and_flag_rules(ia):
 
     flagged = bundle.model_copy(update={"rules": [rule("list", {"domains": ["www.DHL.com"]}, action="flag")]})
     score = score_company(make_company(), flagged, signals, NOW)
-    assert score.priority == 70.9 and score.tier == "hot"
+    assert score.priority == 62.1 and score.tier == "warm"
     assert [h["action"] for h in score.rule_hits] == ["flag"]
 
 
 def test_profile_change_rescales_without_new_signals(ia):
     bundle, signals = ia
-    strict = bundle.model_copy(update={"scoring": make_profile(tiers={"hot": 80, "warm": 60})})
+    strict = bundle.model_copy(update={"scoring": make_profile(tiers={"hot": 70, "warm": 60})})
     assert score_company(make_company(), strict, signals, NOW).tier == "warm"
     low_hiring = bundle.model_copy(
         update={
@@ -409,3 +509,69 @@ def test_signal_rule_threshold():
     assert evaluate_rules(make_company(), [r], {"ia_distress": 0.5})
     assert not evaluate_rules(make_company(), [r], {"ia_distress": 0.49})
     assert not evaluate_rules(make_company(), [r], {})
+
+
+# --- default tuning: weights must be visible in the tier (P0) ----------------------------------------
+
+
+def _demo_signals(q):
+    """DHL-like demo account on the IA preset: realistic mix of sources, strengths and ages."""
+
+    def sig(key, n, **kw):
+        return make_signal(
+            q[key],
+            quote=f"{key} evidence number {n} with its own wording",
+            summary=f"{key} summary {n}",
+            url=f"https://source{n}.example.com/{key}",
+            **kw,
+        )
+
+    return [
+        sig("ia_ai_projects", 1, source_type="website", confidence=0.9, event_date=days_ago(60)),
+        sig(
+            "ia_ai_projects",
+            2,
+            source_type="news",
+            strength="moderate",
+            confidence=0.8,
+            event_date=days_ago(30),
+        ),
+        sig("ia_dt", 3, source_type="report", strength="moderate", confidence=0.8, event_date=days_ago(100)),
+        sig("ia_hiring", 4, source_type="jobs", confidence=0.9, event_date=days_ago(10)),
+        sig("ia_hiring", 5, source_type="jobs", strength="moderate", confidence=0.8, event_date=days_ago(20)),
+        sig(
+            "ia_inhouse",
+            6,
+            source_type="website",
+            strength="moderate",
+            confidence=0.8,
+            event_date=days_ago(90),
+        ),
+    ]
+
+
+def test_weight_change_flips_a_tier_on_realistic_data():
+    """ia_hiring High → Low must change the tier of a typical demo account (it did not with τ_intent = 3)."""
+    from leadradar_ai.presets import load_preset
+
+    bundle = load_preset("intelligent_automation").to_bundle()
+    q = {x.key: x for x in bundle.questions}
+    signals = _demo_signals(q)
+    company = make_company()  # DE, logistics, 590k employees → Fit 100
+
+    def with_hiring(weight, profile=None):
+        questions = [
+            x.model_copy(update={"weight": weight}) if x.key == "ia_hiring" else x for x in bundle.questions
+        ]
+        return bundle.model_copy(update={"questions": questions, "scoring": profile or bundle.scoring})
+
+    high = score_company(company, with_hiring("high"), signals, NOW)
+    low = score_company(company, with_hiring("low"), signals, NOW)
+    assert (high.fit, high.risk) == (100.0, 33.0)
+    assert (high.priority, high.tier) == (66.6, "hot")
+    assert (low.priority, low.tier) == (59.4, "warm")
+
+    # the old default τ_intent = 3 saturated Intent: the same change moved no tier
+    tau3 = bundle.scoring.model_copy(update={"tau_intent": 3.0})
+    assert score_company(company, with_hiring("high", tau3), signals, NOW).tier == "hot"
+    assert score_company(company, with_hiring("low", tau3), signals, NOW).tier == "hot"

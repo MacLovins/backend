@@ -1,9 +1,32 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+import leadradar_ai as ai
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+# Canonical enums (ARCHITECTURE §4.7). They mirror the leadradar_ai contracts (QuestionConfig, RuleConfig);
+# test_config_validation checks that they stay identical, the router re-validates through the ai contracts.
+Weight = Literal["high", "medium", "low"]
+Polarity = Literal["positive", "negative"]
+SourceType = Literal["news", "website", "jobs", "report", "registry", "incident", "derived", "manual"]
+RuleKind = Literal["firmographic", "signal", "list"]
+RuleAction = Literal["exclude", "cap", "flag"]
+
+
+def _known_category(value: str) -> str:
+    if value not in ai.SIGNAL_CATEGORIES:
+        raise ValueError(f"unknown category '{value}', expected one of {sorted(ai.SIGNAL_CATEGORIES)}")
+    return value
+
+
+def _unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+Category = Annotated[str, AfterValidator(_known_category)]
+SourceTypes = Annotated[list[SourceType], Field(min_length=1), AfterValidator(_unique)]
 
 
 # Service Schemas
@@ -49,11 +72,11 @@ class SignalQuestionCreate(BaseModel):
 
     key: str = Field(..., min_length=1, max_length=128)
     text: str = Field(..., min_length=1)
-    category: str = "ai_automation"
-    polarity: str = "positive"  # positive / negative
-    weight: str = "medium"  # high / medium / low
-    source_types: list[str] = ["website", "news", "jobs"]
-    recency_days: int = 180
+    category: Category = "ai_automation"
+    polarity: Polarity = "positive"
+    weight: Weight = "medium"
+    source_types: SourceTypes = ["website", "news", "jobs"]
+    recency_days: int = Field(default=180, gt=0)
     job_titles: list[str] = []
     negative_terms: list[str] = []
 
@@ -61,12 +84,12 @@ class SignalQuestionCreate(BaseModel):
 class SignalQuestionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str | None = None
-    category: str | None = None
-    polarity: str | None = None
-    weight: str | None = None
-    source_types: list[str] | None = None
-    recency_days: int | None = None
+    text: str | None = Field(default=None, min_length=1)
+    category: Category | None = None
+    polarity: Polarity | None = None
+    weight: Weight | None = None
+    source_types: SourceTypes | None = None
+    recency_days: int | None = Field(default=None, gt=0)
     job_titles: list[str] | None = None
     negative_terms: list[str] | None = None
     is_active: bool | None = None
@@ -101,10 +124,30 @@ class ICPProfileIn(BaseModel):
 
     countries: list[str] = []
     industries_any: list[str] = []
-    employees_min: int | None = None
-    employees_max: int | None = None
-    revenue_min_eur: Decimal | None = None
+    employees_min: int | None = Field(default=None, ge=0)
+    employees_max: int | None = Field(default=None, ge=0)
+    revenue_min_eur: Decimal | None = Field(default=None, ge=0)
+    # {"criteria": [{"kind": "industry_in", "values": [...], "weight": 2}, ...]} — ai.Criterion items
     nice_to_have: dict[str, Any] | None = None
+
+    @field_validator("nice_to_have")
+    @classmethod
+    def _nice_to_have(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        unknown = set(value) - {"criteria"}
+        if unknown:
+            raise ValueError(f"unknown keys {sorted(unknown)}, expected {{'criteria': [...]}}")
+        criteria = value.get("criteria") or []
+        if not isinstance(criteria, list):
+            raise ValueError("'criteria' must be a list")
+        try:
+            parsed = [ai.Criterion.model_validate(c) for c in criteria]
+        except ValidationError as e:
+            raise ValueError(
+                f"invalid criterion: {e.errors(include_url=False, include_context=False)}"
+            ) from e
+        return {"criteria": [c.model_dump(mode="json") for c in parsed]}
 
 
 class ICPProfileOut(BaseModel):
@@ -116,7 +159,7 @@ class ICPProfileOut(BaseModel):
     industries_any: list[str]
     employees_min: int | None
     employees_max: int | None
-    revenue_min_eur: Decimal | None
+    revenue_min_eur: float | None
     nice_to_have: dict[str, Any] | None
     version: int
     created_at: datetime
@@ -127,21 +170,21 @@ class ICPProfileOut(BaseModel):
 class DisqualificationRuleCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    kind: str
+    name: str = Field(..., min_length=1)
+    kind: RuleKind
     condition: dict[str, Any]
-    action: str = "disqualify"
-    cap_value: Decimal | None = None
+    action: RuleAction  # required: no default that could silently mean something else
+    cap_value: Decimal | None = Field(default=None, ge=0, le=100)
     is_active: bool = True
 
 
 class DisqualificationRuleUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1)
     condition: dict[str, Any] | None = None
-    action: str | None = None
-    cap_value: Decimal | None = None
+    action: RuleAction | None = None
+    cap_value: Decimal | None = Field(default=None, ge=0, le=100)
     is_active: bool | None = None
 
 
@@ -154,7 +197,7 @@ class DisqualificationRuleOut(BaseModel):
     kind: str
     condition: dict[str, Any]
     action: str
-    cap_value: Decimal | None
+    cap_value: float | None
     is_active: bool
     created_at: datetime
     updated_at: datetime

@@ -23,12 +23,24 @@
   country: DE
   industries: [software]
   employees: 100000
-  note: vendor trap — sells automation, must be flagged, not treated as a buyer
+  note: vendor trap — sells automation and AI; must be flagged by the vendor rule, not treated as a buyer
 - domain: orange.com
   name: Orange SA
   fixture: orange.jsonl
-  aliases: [Orange]
+  aliases: [Orange, Orange Group]
   country: FR
   industries: [telecom]
   employees: 130000
+  # generic homonyms (Orange County, Orange Public Schools, East Orange…) are caught by the entity filter;
+  # these are the ones an account manager would add after seeing them in the news
+  homonyms: [Orange Marketing, Orange Lion, Orange Insurance Exchange, Orange 142, Orange Peel]
   note: homonym trap — news about other "Orange" organisations must be rejected (wrong_subject)
+- domain: deutschebahn.com
+  name: Deutsche Bahn
+  fixture: deutschebahn.jsonl
+  aliases: [Deutsche Bahn AG, DB]
+  own_domains: [bahn.de]
+  country: DE
+  industries: [rail]
+  employees: 320000
+  note: real cyber incident (DDoS, Feb 2026) next to an outage that was not an attack

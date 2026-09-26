@@ -1,8 +1,9 @@
 import asyncio
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 import httpx
@@ -18,14 +19,31 @@ from tenacity import (
     wait_exponential,
 )
 
-from .errors import RobotsDenied, SourceBlocked, SourceRateLimited, SourceRequestFailed, SourceTimeout
+from .errors import (
+    RobotsDenied,
+    SourceBlocked,
+    SourceRateLimited,
+    SourceRequestFailed,
+    SourceTimeout,
+    SourceTooLarge,
+)
 from .settings import ParserSettings
 
 BLOCKED_HOSTS = {"linkedin.com", "facebook.com", "instagram.com", "x.com", "twitter.com"}
 BLOCKED_LABELS = {"indeed", "glassdoor"}
+SECRET_PARAMS = {"api_key", "apikey", "key", "user_key", "token", "access_token", "app_key", "app_id"}
 RETRYABLE_ERRORS = (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+# Request extension: the polite transport returns the body unread so `HttpClient.download` can cap its size.
+STREAM_EXTENSION = "leadradar_stream"
 
 _LOOP_LOCKS: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = WeakKeyDictionary()
+
+
+@dataclass(frozen=True)
+class Download:
+    url: str
+    content: bytes
+    content_type: str
 
 
 class _RetryableStatus(Exception):
@@ -58,6 +76,18 @@ def is_blocked_host(host: str) -> bool:
     return any(label in BLOCKED_LABELS for label in labels)
 
 
+def redact_url(url: str) -> str:
+    """Hide API keys passed as query parameters (SerpAPI, NewsAPI…) before a URL reaches errors or logs."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    query = [
+        (k, "***" if k.lower() in SECRET_PARAMS else v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+    ]
+    return urlunsplit(parts._replace(query=urlencode(query, safe="*")))
+
+
 def ensure_allowed_host(host: str) -> None:
     if is_blocked_host(host):
         raise SourceBlocked(f"Requests to {host} are forbidden by source policy")
@@ -87,11 +117,25 @@ class _PoliteTransport(httpx.AsyncBaseTransport):
         async with self._limiters[host], self._slots:
             self.requests_sent += 1
             response = await self._inner.handle_async_request(request)
-            await response.aread()
+            if not request.extensions.get(STREAM_EXTENSION):
+                await response.aread()
             return response
 
     async def aclose(self) -> None:
         await self._inner.aclose()
+
+
+class _Unowned(httpx.AsyncBaseTransport):
+    """Shares a transport with a second client without closing it twice."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self._inner = inner
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        return None
 
 
 class HttpClient:
@@ -129,6 +173,13 @@ class HttpClient:
             timeout=self.settings.request_timeout_s,
             follow_redirects=True,
         )
+        # Large binaries (PDF reports) bypass the HTTP cache and are streamed with a size cap.
+        self._stream_client = httpx.AsyncClient(
+            transport=_Unowned(self._network),
+            headers={"User-Agent": self.settings.user_agent, "Accept": "*/*"},
+            timeout=self.settings.request_timeout_s,
+            follow_redirects=True,
+        )
         self._robots: dict[str, tuple[datetime, Protego | None]] = {}
         self._robots_lock = asyncio.Lock()
 
@@ -144,6 +195,7 @@ class HttpClient:
         await self.aclose()
 
     async def aclose(self) -> None:
+        await self._stream_client.aclose()
         await self._client.aclose()
 
     async def allowed(self, url: str) -> bool:
@@ -185,11 +237,58 @@ class HttpClient:
     ) -> httpx.Response:
         ensure_allowed_host(urlsplit(url).hostname or "")
         if check_robots and method.upper() in {"GET", "HEAD"} and not await self.allowed(url):
-            raise RobotsDenied(f"robots.txt disallows {url}")
+            raise RobotsDenied(f"robots.txt disallows {redact_url(url)}")
         return await self._request(method, url, attempts=attempts, **kwargs)
 
     async def get(self, url: str, **kwargs: object) -> httpx.Response:
         return await self.request("GET", url, **kwargs)
+
+    async def download(
+        self,
+        url: str,
+        *,
+        max_bytes: int,
+        timeout_s: float | None = None,
+        check_robots: bool = True,
+        headers: dict[str, str] | None = None,
+    ) -> "Download":
+        """GET a binary without the cache or retries; aborts as soon as the body exceeds `max_bytes`."""
+        ensure_allowed_host(urlsplit(url).hostname or "")
+        safe_url = redact_url(url)
+        if check_robots and not await self.allowed(url):
+            raise RobotsDenied(f"robots.txt disallows {safe_url}")
+        deadline = timeout_s or self.settings.request_timeout_s
+        try:
+            async with (
+                asyncio.timeout(deadline),
+                self._stream_client.stream(
+                    "GET", url, headers=headers, extensions={STREAM_EXTENSION: True}
+                ) as response,
+            ):
+                if response.status_code == 429:
+                    retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
+                    raise SourceRateLimited(f"Rate limited by {response.url.host}", retry_after)
+                if response.status_code >= 400:
+                    raise SourceRequestFailed(f"HTTP {response.status_code}: {safe_url}")
+                declared = response.headers.get("Content-Length", "")
+                if declared.isdigit() and int(declared) > max_bytes:
+                    raise SourceTooLarge(f"{safe_url} is {int(declared)} bytes (limit {max_bytes})")
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise SourceTooLarge(f"{safe_url} exceeds {max_bytes} bytes")
+                    chunks.append(chunk)
+                return Download(
+                    url=str(response.url),
+                    content=b"".join(chunks),
+                    content_type=response.headers.get("Content-Type", "").lower(),
+                )
+        except (httpx.TimeoutException, TimeoutError) as exc:
+            raise SourceTimeout(f"Timeout downloading {safe_url}") from exc
+        except httpx.TransportError as exc:
+            raise SourceRequestFailed(f"Network error downloading {safe_url}: {type(exc).__name__}") from exc
 
     async def post(self, url: str, **kwargs: object) -> httpx.Response:
         kwargs.setdefault("check_robots", False)
@@ -200,6 +299,7 @@ class HttpClient:
     ) -> httpx.Response:
         host = urlsplit(url).hostname or ""
         ensure_allowed_host(host)
+        safe_url = redact_url(url)
         last_response: httpx.Response | None = None
         retrying = AsyncRetrying(
             stop=stop_after_attempt(max(1, attempts or self.settings.retry_attempts)),
@@ -207,28 +307,32 @@ class HttpClient:
             retry=retry_if_exception_type((*RETRYABLE_ERRORS, _RetryableStatus)),
             reraise=True,
         )
+        # httpx timeouts are per operation (connect / each read); a host that trickles bytes never trips
+        # them. Cap the whole attempt as well (Wikidata passes timeout=60 explicitly).
+        deadline = float(kwargs.get("timeout") or self.settings.request_timeout_s)  # type: ignore[arg-type]
         try:
             async for attempt in retrying:
                 with attempt:
-                    response = await self._client.request(method, url, **kwargs)
+                    async with asyncio.timeout(deadline):
+                        response = await self._client.request(method, url, **kwargs)
                     if response.status_code == 429 or response.status_code >= 500:
                         raise _RetryableStatus(response)
                     response.raise_for_status()
                     return response
         except _RetryableStatus as exc:
             last_response = exc.response
-        except httpx.TimeoutException as exc:
-            raise SourceTimeout(f"Timeout requesting {url}") from exc
+        except (httpx.TimeoutException, TimeoutError) as exc:
+            raise SourceTimeout(f"Timeout requesting {safe_url}") from exc
         except httpx.TransportError as exc:
-            raise SourceRequestFailed(f"Network error requesting {url}: {exc}") from exc
+            raise SourceRequestFailed(f"Network error requesting {safe_url}: {type(exc).__name__}") from exc
         except httpx.HTTPStatusError as exc:
-            raise SourceRequestFailed(f"HTTP {exc.response.status_code}: {url}") from exc
+            raise SourceRequestFailed(f"HTTP {exc.response.status_code}: {safe_url}") from exc
 
         if last_response is not None and last_response.status_code == 429:
             retry_after = _retry_after_seconds(last_response.headers.get("Retry-After"))
             raise SourceRateLimited(f"Rate limited by {host}", retry_after)
         status = last_response.status_code if last_response is not None else "unknown"
-        raise SourceRequestFailed(f"HTTP {status}: {url}")
+        raise SourceRequestFailed(f"HTTP {status}: {safe_url}")
 
     def _wait(self, state: RetryCallState) -> float:
         exc = state.outcome.exception() if state.outcome else None

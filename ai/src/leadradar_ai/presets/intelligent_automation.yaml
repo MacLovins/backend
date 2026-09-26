@@ -53,8 +53,8 @@ questions:
     source_types: [news, website, report]
     recency_days: 365
     keywords_seed:
-      en: [cost reduction, efficiency program, savings target, profitability improvement, operating costs]
-      de: [Kostensenkung, Effizienzprogramm, Sparprogramm, Einsparziel, Kostenoptimierung]
+      en: [cost reduction, efficiency program, savings target, profitability improvement, operating costs, job cuts]
+      de: [Kostensenkung, Effizienzprogramm, Sparprogramm, Einsparziel, Kostenoptimierung, Stellenabbau]
       fr: [réduction des coûts, programme d'efficacité, plan d'économies]
 
   - key: ia_ai_projects
@@ -124,7 +124,7 @@ questions:
     source_types: [news, website, report, jobs]
     recency_days: 365
     keywords_seed:
-      en: [shared service center, global business services, GBS, back office consolidation, finance transformation]
+      en: [shared service center, global business services, GBS, back office consolidation, finance transformation, administrative jobs]
       de: [Shared Service Center, Konsolidierung, Backoffice, Verwaltung zentralisieren]
       fr: [centre de services partagés, consolidation, back-office]
 

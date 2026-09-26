@@ -17,6 +17,13 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+# Canonical enums (ARCHITECTURE §4.7)
+RUN_KINDS = ("analyze", "discover", "rescore", "refresh")
+RUN_STATUSES = ("queued", "running", "succeeded", "partial", "failed", "cancelled")
+RUN_ACTIVE_STATUSES = ("queued", "running")
+RUN_TERMINAL_STATUSES = ("succeeded", "partial", "failed", "cancelled")
+RUN_MODES = ("incremental", "full")
+
 
 class AnalysisRun(Base, CoreTableMixin):
     __tablename__ = "analysis_run"
@@ -25,10 +32,10 @@ class AnalysisRun(Base, CoreTableMixin):
         {"schema": "core"},
     )
 
-    kind: Mapped[str] = mapped_column(String(32), default="analyze", nullable=False)  # analyze / refresh
+    kind: Mapped[str] = mapped_column(String(32), default="analyze", nullable=False)  # RUN_KINDS
     status: Mapped[str] = mapped_column(
-        String(32), default="pending", nullable=False
-    )  # pending/running/succeeded/partial/failed/cancelled
+        String(32), default="queued", server_default="queued", nullable=False
+    )  # RUN_STATUSES
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     progress: Mapped[dict[str, Any]] = mapped_column(
         JSONB,

@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Annotated, get_args
 
 import typer
@@ -13,6 +14,7 @@ from . import (
     CompanyRef,
     DiscoveryQuery,
     ParserSettings,
+    ResolvedCompany,
     SourceType,
     collect,
     create_http_client,
@@ -24,6 +26,8 @@ from .adapters.registry import ADAPTERS
 
 app = typer.Typer(no_args_is_help=True, help="Collect and normalize public company data.")
 SOURCE_TYPES = set(get_args(SourceType))
+RESOLVE_TIMEOUT_S = 60
+MIN_COLLECT_BUDGET_S = 15
 
 
 @app.command("adapters")
@@ -77,9 +81,26 @@ def collect_command(
         settings = settings.model_copy(update={"adapters": [*adapter_ids, *by_type]})
 
     async def run() -> CollectResult:
+        ref = CompanyRef(name=name, domain=domain)
+        started = monotonic()
         async with create_http_client(settings) as http:
-            company = await resolve_company(CompanyRef(name=name, domain=domain), http=http)
-            return await collect(company, plan, http=http)
+            try:
+                async with asyncio.timeout(RESOLVE_TIMEOUT_S):
+                    company = await resolve_company(ref, http=http)
+            except TimeoutError:
+                typer.echo(
+                    f"resolve timed out after {RESOLVE_TIMEOUT_S}s; collecting with defaults", err=True
+                )
+                company = ResolvedCompany(
+                    **ref.model_dump(),
+                    homepage_url=f"https://{ref.domain}",
+                    own_domains=[ref.domain],
+                    resolved_at=datetime.now(UTC),
+                    notes=["resolve timed out"],
+                )
+            # --time-budget covers the whole command (SPEC DoD: ≤ 90 s per company), resolve included.
+            remaining = max(MIN_COLLECT_BUDGET_S, int(plan.time_budget_s - (monotonic() - started)))
+            return await collect(company, plan.model_copy(update={"time_budget_s": remaining}), http=http)
 
     result = asyncio.run(run())
     lines = [document.model_dump_json() for document in result.documents]

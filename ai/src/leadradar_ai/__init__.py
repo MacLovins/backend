@@ -1,9 +1,16 @@
-"""Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import.
+"""Public API of leadradar-ai (SPEC §1.4.1) — the only module core may import."""
 
-suggest_questions and classify_industry (P1) are added here as they are implemented.
-"""
-
-from leadradar_ai.config_assist import QuestionExpansion, apply_expansion, expand_question, languages_for_icp
+from leadradar_ai.config_assist import (
+    IndustryClassification,
+    QuestionExpansion,
+    QuestionSuggestions,
+    SuggestedQuestion,
+    apply_expansion,
+    classify_industry,
+    expand_question,
+    languages_for_icp,
+    suggest_questions,
+)
 from leadradar_ai.contracts import (
     AnalysisDocument,
     AnalysisInput,
@@ -81,6 +88,7 @@ __all__ = [
     "FitResult",
     "GeminiClient",
     "ICPConfig",
+    "IndustryClassification",
     "LLMBadRequest",
     "LLMCache",
     "LLMCallRecord",
@@ -99,6 +107,7 @@ __all__ = [
     "ProgressSink",
     "QuestionConfig",
     "QuestionExpansion",
+    "QuestionSuggestions",
     "QuotaExhausted",
     "Reason",
     "RejectedEvidence",
@@ -110,10 +119,12 @@ __all__ = [
     "Snippet",
     "StepError",
     "StoredSignal",
+    "SuggestedQuestion",
     "UsageSink",
     "VerifiedSignal",
     "apply_expansion",
     "build_analysis_graph",
+    "classify_industry",
     "derived_signals",
     "evaluate_rules",
     "expand_question",
@@ -128,6 +139,7 @@ __all__ = [
     "run_analysis",
     "run_eval",
     "score_company",
+    "suggest_questions",
     "thread_config",
     "write_report",
 ]

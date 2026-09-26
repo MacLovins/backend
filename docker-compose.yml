@@ -12,6 +12,8 @@ x-app: &app
   environment: &app-env
     APP_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-leadradar}:${POSTGRES_PASSWORD:-leadradar}@postgres:5432/${POSTGRES_DB:-leadradar}
     APP_REDIS_URL: redis://redis:6379/0
+    # analysis and outreach run only in the worker service, never inside the api process
+    APP_EMBEDDED_WORKER: "false"
     PARSER_CACHE_DIR: /app/.cache/parser
     AI_EMBED_CACHE_DIR: /app/.cache/fastembed
   depends_on:
@@ -77,6 +79,13 @@ services:
     command: ["taskiq", "worker", "leadradar_core.worker.broker:broker", "--workers", "1", "--max-async-tasks", "3"]
     volumes:
       - worker-cache:/app/.cache
+
+  # periodic tasks (refresh_tracked, resume_paused, dispatch_events) are only enqueued here; the worker runs them
+  scheduler:
+    <<: *app
+    container_name: leadradar-scheduler
+    restart: unless-stopped
+    command: ["taskiq", "scheduler", "leadradar_core.worker.broker:scheduler"]
 
   # --- одноразовые команды: docker compose run --rm <service> ---
   migrate:

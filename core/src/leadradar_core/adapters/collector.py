@@ -103,6 +103,7 @@ class ParserCollector:
             **mapping.company_ref(row).model_dump(),
             homepage_url=row.homepage_url or f"https://{row.domain}",
             own_domains=list(dict.fromkeys([row.domain, *(row.own_domains or [])])),
+            firmographics=mapping.firmographics(row),
             resolved_at=row.resolved_at or datetime.now(UTC),
         )
         plan = parser.CollectPlan(

@@ -10,10 +10,11 @@ from ..contracts import CollectPlan, Document, RateLimit, ResolvedCompany
 from ..errors import ParserError, SourceRateLimited
 from ..http import HttpClient, shared_lock
 from ..normalize import canonicalize_url
-from .common import extract_page, is_html, make_document
+from .common import extract_page, is_html, make_document, search_name
 
 GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 MIN_INTERVAL_S = 5.0
+GDELT_TIMEOUT_S = 30.0  # the DOC API regularly needs 10-20 s
 # Consecutive 429s open the breaker for 60 s, then 120 s, then 15 min (SPEC §1.7.1).
 BREAKER_PAUSES_S = (60, 120, 900)
 MAX_ARTICLES = 20
@@ -105,7 +106,7 @@ class GdeltAdapter:
 
     @staticmethod
     def _queries(company: ResolvedCompany, plan: CollectPlan) -> list[tuple[str, str]]:
-        name = _search_name(company)
+        name = search_name(company)
         languages = [
             f"sourcelang:{GDELT_LANGUAGES[code]}" for code in plan.languages if code in GDELT_LANGUAGES
         ]
@@ -129,6 +130,7 @@ class GdeltAdapter:
                     GDELT_URL,
                     check_robots=False,
                     attempts=1,  # retries are handled by the breaker, not by hammering the API
+                    timeout=GDELT_TIMEOUT_S,
                     params={
                         "query": query,
                         "mode": "ArtList",
@@ -153,16 +155,6 @@ class GdeltAdapter:
             if not response.extensions.get("hishel_from_cache"):
                 _last_request_at = time.monotonic()
             return response
-
-
-def _search_name(company: ResolvedCompany) -> str:
-    """Prefer the legal name; short names like "DHL" get a longer alias to avoid homonyms."""
-    legal_name = company.firmographics.legal_name if company.firmographics else None
-    name = (legal_name or company.name).strip()
-    if len(name) <= 4:
-        longer = next((alias for alias in company.aliases if len(alias.strip()) > len(name)), None)
-        name = longer.strip() if longer else name
-    return name.replace('"', "")
 
 
 def _any_of(terms: list[str]) -> str:

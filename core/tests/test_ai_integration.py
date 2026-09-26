@@ -163,7 +163,7 @@ async def create_run(org_id: UUID, company_ids: list[UUID], service_ids: list[UU
         run = AnalysisRun(
             org_id=org_id,
             kind="analyze",
-            status="pending",
+            status="queued",
             params={
                 "company_ids": [str(c) for c in company_ids],
                 "service_ids": [str(s) for s in service_ids],
@@ -378,7 +378,7 @@ async def test_retry_failed_reopens_failed_companies(org_id, fake_worker, fake_p
     await engine.dispose()
     res = client.post(f"/api/v1/runs/{run_id}/retry-failed", headers=headers(org_id))
     assert res.status_code == 200, res.text
-    assert res.json()["status"] == "running" and res.json()["progress"]["paused"] == 0
+    assert res.json()["status"] == "queued" and res.json()["progress"]["paused"] == 0
 
 
 async def test_expand_question_task_stores_keywords(org_id, fake_worker):

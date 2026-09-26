@@ -32,3 +32,15 @@ def test_settings_parse_comma_separated_adapters(monkeypatch: pytest.MonkeyPatch
     settings = ParserSettings()
     assert settings.adapters == ["gdelt", "website"] and settings.max_concurrency == 3
     assert {item.id for item in list_adapters() if item.enabled} == {"gdelt", "website"}
+
+
+def test_source_keys_are_read_from_env_file(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """core runs the parser outside Docker too: keys in .env must reach adapters without os.environ."""
+    from leadradar_parser import ParserSettings, list_adapters
+
+    monkeypatch.delenv("NEWSAPI_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("NEWSAPI_KEY=from-dotenv\nPARSER_ADAPTERS=newsapi,gdelt\n")
+    settings = ParserSettings(_env_file=env_file)
+    assert settings.env("NEWSAPI_KEY") == "from-dotenv"
+    assert {item.id for item in list_adapters(settings) if item.enabled} == {"newsapi", "gdelt"}

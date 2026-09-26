@@ -1,27 +1,26 @@
-"""Playwright-based dynamic web crawler adapter.
+"""Playwright rendering for JavaScript-only pages (SPEC PR-20, P2 fallback).
 
-Renders JavaScript-heavy single page applications (SPAs), dynamic career portals,
-and protected pages where static HTML fetch is insufficient.
+Off by default. Needs the optional extra (`uv sync --extra browser` / `leadradar-parser[browser]`) and
+`playwright install chromium`. The same politeness rules as the HTTP layer apply: block-list and robots.txt
+are checked before navigation, and sub-requests to block-listed hosts are aborted.
 """
 
+import logging
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
-import structlog
-
 from ..contracts import CollectPlan, Document, RateLimit, ResolvedCompany
-from ..http import HttpClient
-from ..normalize import canonicalize_url
-from .base import SourceAdapter
+from ..errors import ParserError
+from ..http import HttpClient, is_blocked_host
+from ..normalize import canonicalize_url, utc_datetime
 from .common import extract_page, make_document
 
-log = structlog.get_logger(__name__)
+log = logging.getLogger(__name__)
+MIN_PAGE_CHARS = 300
+NAVIGATION_TIMEOUT_MS = 15_000
 
 
-class PlaywrightAdapter(SourceAdapter):
-    """Dynamic headless browser crawler using Playwright."""
-
+class PlaywrightAdapter:
     id = "playwright"
     source_type = "website"
     requires_env = None
@@ -33,87 +32,65 @@ class PlaywrightAdapter(SourceAdapter):
         try:
             from playwright.async_api import async_playwright
         except ImportError:
-            log.warning("playwright_not_installed")
+            log.warning("playwright is not installed; install leadradar-parser[browser]")
             return
 
-        urls_to_visit = [company.homepage_url]
-        if company.careers_url:
-            urls_to_visit.append(company.careers_url)
-        if company.newsroom_url:
-            urls_to_visit.append(company.newsroom_url)
+        targets: list[str] = []
+        for url in (company.homepage_url, company.newsroom_url, company.careers_url):
+            if not url or canonicalize_url(url) in {canonicalize_url(item) for item in targets}:
+                continue
+            try:
+                if await http.allowed(url):  # raises SourceBlocked for block-listed hosts
+                    targets.append(url)
+            except ParserError:
+                continue
+        targets = targets[: plan.max_website_pages]
+        if not targets:
+            return
 
-        visited: set[str] = set()
-
-        try:
-            async with async_playwright() as p:
-                try:
-                    browser = await p.chromium.launch(
-                        headless=True,
-                        args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-                    )
-                except Exception as exc:
-                    log.warning("playwright_browser_launch_failed", error=str(exc))
-                    return
-
-                try:
-                    context = await browser.new_context(
-                        user_agent=(
-                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                        ),
-                        viewport={"width": 1280, "height": 800},
-                    )
-                    page = await context.new_page()
-
-                    for target_url in urls_to_visit:
-                        canonical = canonicalize_url(target_url)
-                        if canonical in visited or len(visited) >= plan.max_website_pages:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
+            try:
+                context = await browser.new_context(user_agent=http.settings.user_agent)
+                await context.route("**/*", _abort_blocked_hosts)
+                page = await context.new_page()
+                for url in targets:
+                    try:
+                        response = await page.goto(
+                            url, wait_until="domcontentloaded", timeout=NAVIGATION_TIMEOUT_MS
+                        )
+                        if response is None or response.status >= 400:
                             continue
-                        visited.add(canonical)
-
                         try:
-                            response = await page.goto(
-                                target_url,
-                                wait_until="domcontentloaded",
-                                timeout=15000,
-                            )
-                            if not response or response.status >= 400:
-                                continue
+                            await page.wait_for_load_state("networkidle", timeout=3_000)
+                        except Exception:  # pages with long-polling never go idle; the DOM is enough
+                            pass
+                        final_url = page.url
+                        extracted = await extract_page(await page.content(), final_url)
+                    except Exception as exc:  # one broken page must not stop the others
+                        log.debug("playwright page failed: %s: %s", url, exc)
+                        continue
+                    if extracted is None or len(extracted.text) < MIN_PAGE_CHARS:
+                        continue
+                    yield make_document(
+                        source_type="website",
+                        source_name=self.id,
+                        url=final_url,
+                        title=extracted.title or await page.title(),
+                        text=extracted.text,
+                        published_at=utc_datetime(extracted.date),
+                        meta={
+                            "page_kind": "other",
+                            "rendered_by": "playwright",
+                            "host": urlsplit(final_url).hostname,
+                        },
+                    )
+            finally:
+                await browser.close()
 
-                            # Wait briefly for dynamic JS frameworks (React/Vue/Angular)
-                            try:
-                                await page.wait_for_load_state("networkidle", timeout=3000)
-                            except Exception:
-                                pass
 
-                            html_content = await page.content()
-                            final_url = page.url
-                            title = await page.title()
-
-                            extracted = await extract_page(html_content, final_url)
-                            text = extracted.text if extracted else await page.inner_text("body")
-
-                            if not text or len(text.strip()) < 100:
-                                continue
-
-                            yield make_document(
-                                source_type="website",
-                                source_name=self.id,
-                                url=final_url,
-                                title=title or (extracted.title if extracted else None),
-                                text=text,
-                                published_at=datetime.now(UTC),
-                                meta={
-                                    "dynamic": True,
-                                    "rendered_by": "playwright",
-                                    "hostname": urlsplit(final_url).hostname or "",
-                                },
-                            )
-                        except Exception as exc:
-                            log.debug("playwright_fetch_page_failed", url=target_url, error=str(exc))
-                            continue
-                finally:
-                    await browser.close()
-
-        except Exception as exc:
-            log.warning("playwright_session_error", error=str(exc))
+async def _abort_blocked_hosts(route, request) -> None:  # type: ignore[no-untyped-def]
+    if is_blocked_host(urlsplit(request.url).hostname or ""):
+        await route.abort()
+    else:
+        await route.continue_()

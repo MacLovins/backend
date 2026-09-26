@@ -23,6 +23,7 @@ from leadradar_ai.retrieval.bm25 import BM25
 from leadradar_ai.retrieval.chunking import index_text
 from leadradar_ai.retrieval.entity import CONTEXT_CHARS, mention_pattern, passes_entity_filter
 from leadradar_ai.retrieval.text import fold
+from leadradar_ai.scoring.derived import derived_fingerprint
 from leadradar_ai.settings import AISettings
 
 
@@ -69,9 +70,15 @@ def load_window(bundle: ServiceBundle, now: datetime) -> tuple[datetime, set[Sou
     return now - timedelta(days=days), sources
 
 
-def compute_fingerprint(questions: list[QuestionConfig], chunk_ids: list[str], prompt_version: str) -> str:
+def compute_fingerprint(
+    questions: list[QuestionConfig], chunk_ids: list[str], prompt_version: str, derived: str = ""
+) -> str:
+    """`derived`: signature of the derived NIS2/DORA signals — they are saved with the extraction, so a
+    change must not be skipped. Empty (no derived signals) keeps the original fingerprint."""
     q_part = ",".join(sorted(f"{q.id}@{q.version}" for q in questions))
     payload = f"{q_part}|{','.join(sorted(chunk_ids))}|{prompt_version}"
+    if derived:
+        payload += f"|{derived}"
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -192,7 +199,10 @@ def prefilter(
         candidates={qid: [label[i] for i in idxs] for qid, idxs in candidates.items()},
         no_candidates=[str(q.id) for q in bundle.questions if str(q.id) not in candidates],
         fingerprint=compute_fingerprint(
-            bundle.questions, [str(passing[i].chunk_id) for i in union], prompt_version
+            bundle.questions,
+            [str(passing[i].chunk_id) for i in union],
+            prompt_version,
+            derived_fingerprint(company, bundle, now),
         ),
         stats={
             "loaded": len(snippets),

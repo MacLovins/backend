@@ -75,6 +75,32 @@ def render_markdown(result: EvalResult) -> str:
         hint = f"; hint: {d.evidence_hint}" if d.evidence_hint else ""
         lines.append(f"- **{d.company_domain} · {d.question_key}** — {why}{rejected}{hint}")
 
+    if result.evidence:
+        ev = result.evidence_summary
+        lines += [
+            "",
+            "## Labelled evidence and traps",
+            "",
+            f"- Supporting evidence verified: {ev['accept_verified']} of {ev['accept']}",
+            f"- Traps that became a signal: {ev['traps_leaked']} of {ev['traps']}",
+        ]
+        leaked = [e for e in result.evidence if e.expected == "reject" and e.signal]
+        lines += [f"  - **{e.company_domain} · {e.question_key}** ({e.reason}): “{e.quote}”" for e in leaked]
+
+    if result.scores:
+        lines += [
+            "",
+            "## Scores",
+            "",
+            "| Company | Service | Priority | Tier | Rules |",
+            "|---|---|---|---|---|",
+        ]
+        for sc in result.scores:
+            tier = f"{sc.tier} (outside ICP)" if sc.outside_icp else sc.tier
+            lines.append(
+                f"| {sc.company_domain} | {sc.service} | {sc.priority} | {tier} | {', '.join(sc.rules) or '—'} |"
+            )
+
     if result.notes:
         lines += ["", "## Notes", "", *[f"- {n}" for n in result.notes]]
     return "\n".join(lines) + "\n"
@@ -88,5 +114,6 @@ def write_report(result: EvalResult, out_dir: str | Path) -> tuple[Path, Path]:
     md.write_text(render_markdown(result), encoding="utf-8")
     payload = result.model_dump(mode="json")
     payload["decisions"] = [d.model_dump(mode="json") | {"outcome": d.outcome} for d in result.decisions]
+    payload["evidence_summary"] = result.evidence_summary
     js.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return md, js

@@ -1,23 +1,47 @@
+"""Runs API and the run SSE stream (SPEC core CO-09, CO-10).
+
+SSE (`GET|POST /runs/{id}/events`): first a replay of stored run_event rows after `Last-Event-ID`, then live
+events from Redis `run:{id}`. Live and replay use the same event names and the same data (the run_event payload):
+
+- `run.progress`  `{done, total, failed, paused}`
+- `company.stage` `{company_id, service_id, stage, status, message, ...}`
+- `company.done`  `{company_id, status, message, scores: [{service_id, priority, tier}]}`
+- `run.finished`  `{status, done, total, failed, paused}` — the stream ends after it
+
+Every event's `id` is `run_event.id`. Live messages already sent by the replay are skipped. A keep-alive comment
+goes out every 15 s; at the same time rows missed on the live channel are replayed from the database.
+"""
+
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
-from leadradar_core.db.session import get_db_session
-from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
+from leadradar_core.db.session import async_session_factory, get_db_session
+from leadradar_core.modules.runs import events, service
+from leadradar_core.modules.runs.models import RUN_TERMINAL_STATUSES, AnalysisRun, RunEvent
 from leadradar_core.modules.runs.schemas import RunCreate, RunOut
 from leadradar_core.settings import settings
-from leadradar_core.worker.enqueue import enqueue_analysis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog import get_logger
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+KEEP_ALIVE_S = 15.0
+
+
+def _redis(request: Request) -> aioredis.Redis | None:
+    return getattr(request.app.state, "redis", None)
 
 
 @router.get("", response_model=list[RunOut])
@@ -42,34 +66,12 @@ async def create_run(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RunOut:
-    run = AnalysisRun(
-        org_id=principal.org_id,
-        kind=run_in.kind,
-        status="pending",
-        params={
-            "company_ids": [str(c) for c in run_in.company_ids],
-            "service_ids": [str(s) for s in run_in.service_ids],
-        },
-        progress={"done": 0, "total": len(run_in.company_ids), "failed": 0, "paused": 0},
-        created_by=principal.user_id,
-    )
-    session.add(run)
-    await session.commit()
-    await session.refresh(run)
-
-    # Emit initial run event
-    initial_event = RunEvent(
-        org_id=principal.org_id,
-        run_id=run.id,
-        stage="run",
-        status="pending",
-        message="Run queued for processing",
-        payload=run.progress,
-    )
-    session.add(initial_event)
-    await session.commit()
-
-    await enqueue_analysis(run.id, run_in.company_ids, run_in.service_ids, "incremental")
+    try:
+        run = await service.create_run(session, principal.org_id, principal.user_id, run_in)
+    except service.InvalidRunRequest as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"message": e.message, **e.details}
+        ) from e
     return RunOut.model_validate(run)
 
 
@@ -79,222 +81,168 @@ async def get_run(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RunOut:
-    run = await session.get(AnalysisRun, id)
-    if not run or run.org_id != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-    return RunOut.model_validate(run)
+    return RunOut.model_validate(await service.get_run(session, principal.org_id, id))
 
 
-@router.post("/{id}/cancel", response_model=RunOut)
+@router.post(
+    "/{id}/cancel",
+    response_model=RunOut,
+    responses={status.HTTP_409_CONFLICT: {"description": "The run has already finished"}},
+)
 async def cancel_run(
     id: UUID,
+    request: Request,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RunOut:
-    run = await session.get(AnalysisRun, id)
-    if not run or run.org_id != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-
-    run.status = "cancelled"
-    cancel_ev = RunEvent(
-        org_id=principal.org_id,
-        run_id=run.id,
-        stage="run",
-        status="cancelled",
-        message="Run cancelled by user",
-    )
-    session.add(cancel_ev)
-    await session.commit()
-    await session.refresh(run)
-
-    # Publish to Redis
-    try:
-        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        await r.publish(
-            f"run:{run.id}",
-            json.dumps({"event": "run.finished", "data": {"status": "cancelled"}}),
-        )
-        await r.aclose()
-    except Exception:
-        pass
-
+    run = await service.cancel_run(session, _redis(request), principal.org_id, id)
     return RunOut.model_validate(run)
 
 
-@router.post("/{id}/retry-failed", response_model=RunOut)
+@router.post(
+    "/{id}/retry-failed",
+    response_model=RunOut,
+    responses={status.HTTP_409_CONFLICT: {"description": "The run was cancelled"}},
+)
 async def retry_failed(
     id: UUID,
+    request: Request,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> RunOut:
-    run = await session.get(AnalysisRun, id)
-    if not run or run.org_id != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-
-    # companies whose last outcome in this run was failed or paused (company-level events from the worker)
-    last_outcome: dict[UUID, str] = {}
-    events = await session.execute(
-        select(RunEvent.company_id, RunEvent.status)
-        .where(RunEvent.run_id == run.id, RunEvent.stage == "company")
-        .order_by(RunEvent.id.asc())
-    )
-    for company_id, outcome in events.all():
-        last_outcome[company_id] = outcome
-    retry = [c for c, outcome in last_outcome.items() if outcome in ("failed", "paused")]
-
-    progress = dict(run.progress or {})
-    for outcome in ("failed", "paused"):
-        progress[outcome] = max(
-            0, progress.get(outcome, 0) - sum(1 for c in retry if last_outcome[c] == outcome)
-        )
-    run.progress = progress
-    run.status = "running" if retry else run.status
-    run.finished_at = None if retry else run.finished_at
-    retry_ev = RunEvent(
-        org_id=principal.org_id,
-        run_id=run.id,
-        stage="run",
-        status="retrying",
-        message=f"Retrying {len(retry)} failed or paused companies",
-    )
-    session.add(retry_ev)
-    await session.commit()
-    await session.refresh(run)
-    # same run_id + company: the graph resumes from its checkpoint; paused services continue incrementally
-    service_ids = [UUID(s) for s in (run.params or {}).get("service_ids", [])]
-    await enqueue_analysis(run.id, retry, service_ids, "incremental")
+    run = await service.retry_failed(session, _redis(request), principal.org_id, id)
     return RunOut.model_validate(run)
+
+
+async def _stored_events(run_id: UUID, org_id: UUID, after: int) -> tuple[list[RunEvent], str | None]:
+    """run_event rows after `after` and the current run status (a short session: the stream may be long)."""
+    async with async_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(RunEvent)
+                    .where(RunEvent.run_id == run_id, RunEvent.org_id == org_id, RunEvent.id > after)
+                    .order_by(RunEvent.id.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        run_status = (
+            await session.execute(select(AnalysisRun.status).where(AnalysisRun.id == run_id))
+        ).scalar_one_or_none()
+    return list(rows), run_status
+
+
+def _sse(row: RunEvent) -> ServerSentEvent:
+    # FastAPI JSON-encodes data itself; a pre-encoded string would come out double-encoded
+    return ServerSentEvent(
+        id=str(row.id), event=events.sse_event_name(row.stage, row.status), data=events.event_data(row)
+    )
+
+
+async def _subscribe(run_id: UUID) -> tuple[aioredis.Redis, Any] | None:
+    if settings.ENV == "test":
+        return None
+    try:
+        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        pubsub = client.pubsub()
+        await pubsub.subscribe(events.channel(run_id))
+        return client, pubsub
+    except Exception as e:
+        log.warning("sse_subscribe_failed", run_id=str(run_id), error=str(e))
+        return None
 
 
 async def _stream_events(
-    run_id: UUID,
-    org_id: UUID,
-    last_event_id: int | None,
-    session: AsyncSession,
+    run_id: UUID, org_id: UUID, last_event_id: int | None
 ) -> AsyncIterator[ServerSentEvent]:
-    # 1. Replay past events from run_event table
-    stmt = (
-        select(RunEvent)
-        .where(RunEvent.run_id == run_id, RunEvent.org_id == org_id)
-        .order_by(RunEvent.id.asc())
-    )
-    if last_event_id is not None:
-        stmt = stmt.where(RunEvent.id > last_event_id)
-
-    res = await session.execute(stmt)
-    events = res.scalars().all()
-    highest_id = last_event_id or 0
-
-    for ev in events:
-        highest_id = max(highest_id, ev.id)
-        event_name = f"{ev.stage}.{ev.status}" if ev.stage and ev.status else "run.progress"
-        data_payload = ev.payload or {
-            "stage": ev.stage,
-            "status": ev.status,
-            "message": ev.message,
-            "company_id": str(ev.company_id) if ev.company_id else None,
-            "service_id": str(ev.service_id) if ev.service_id else None,
-        }
-        yield ServerSentEvent(
-            id=str(ev.id),
-            event=event_name,
-            data=data_payload,  # FastAPI JSON-encodes data itself; a pre-encoded string came out double-encoded
-        )
-
-    # Check if run is already in terminal state or test environment
-    run = await session.get(AnalysisRun, run_id)
-    if settings.ENV == "test" or not run or run.status in ("succeeded", "failed", "cancelled", "partial"):
-        yield ServerSentEvent(
-            id=str(highest_id + 1),
-            event="run.finished",
-            data={"status": run.status if run else "finished"},
-        )
-        return
-
-    # 2. Redis pub/sub for real-time events
-    pubsub = None
-    redis_client = None
+    # subscribe before the replay, so nothing published in between is lost (duplicates are skipped by id)
+    live = await _subscribe(run_id)
+    highest = last_event_id or 0
     try:
-        redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-        pubsub = redis_client.pubsub()
-        await pubsub.subscribe(f"run:{run_id}")
+        rows, run_status = await _stored_events(run_id, org_id, highest)
+        finished = False
+        for row in rows:
+            highest = row.id
+            event = _sse(row)
+            finished = event.event == events.RUN_FINISHED  # a retried run continues after an earlier finish
+            yield event
+        if run_status in RUN_TERMINAL_STATUSES:
+            if not finished:  # the terminal row was replayed before Last-Event-ID: still tell the client
+                yield ServerSentEvent(event=events.RUN_FINISHED, data={"status": run_status})
+            return
+        if live is None:  # no live channel (tests, Redis down): the client reconnects with Last-Event-ID
+            return
 
+        _, pubsub = live
+        last_sent = time.monotonic()
         while True:
-            try:
-                msg = await asyncio.wait_for(
-                    pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0),
-                    timeout=15.0,
-                )
-                if msg and msg.get("data"):
-                    raw = msg["data"]
-                    try:
-                        payload = json.loads(raw)
-                    except Exception:
-                        payload = {"data": raw}
-
-                    event_name = payload.get("event", "run.progress")
-                    highest_id += 1
-                    yield ServerSentEvent(
-                        id=str(payload.get("id", highest_id)),
-                        event=event_name,
-                        data=payload.get("data", payload),
-                    )
-                    if event_name == "run.finished":
-                        break
-            except TimeoutError:
-                # Keep-alive ping
+            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if msg and msg.get("data"):
+                try:
+                    payload = json.loads(msg["data"])
+                    event_id = int(payload["id"])
+                    name = payload["event"]
+                except (ValueError, KeyError, TypeError):
+                    log.warning("sse_bad_message", run_id=str(run_id))
+                    continue
+                if event_id <= highest:
+                    continue
+                highest = event_id
+                last_sent = time.monotonic()
+                yield ServerSentEvent(id=str(event_id), event=name, data=payload.get("data", {}))
+                if name == events.RUN_FINISHED:
+                    return
+            elif time.monotonic() - last_sent >= KEEP_ALIVE_S:
+                last_sent = time.monotonic()
                 yield ServerSentEvent(comment="keep-alive")
-            except asyncio.CancelledError:
-                break
-    except Exception:
-        yield ServerSentEvent(
-            id=str(highest_id + 1),
-            event="run.finished",
-            data={"status": "finished"},
-        )
+                rows, run_status = await _stored_events(run_id, org_id, highest)
+                for row in rows:  # catch up on messages lost by pub/sub
+                    highest = row.id
+                    event = _sse(row)
+                    yield event
+                    if event.event == events.RUN_FINISHED and run_status in RUN_TERMINAL_STATUSES:
+                        return
+    except asyncio.CancelledError:
+        raise
     finally:
-        if pubsub:
+        if live is not None:
+            client, pubsub = live
             try:
-                await pubsub.unsubscribe(f"run:{run_id}")
-                await pubsub.close()
+                await pubsub.unsubscribe(events.channel(run_id))
+                await pubsub.aclose()
+                await client.aclose()
             except Exception:
                 pass
-        if redis_client:
-            try:
-                await redis_client.aclose()
-            except Exception:
-                pass
+
+
+async def _sse_run(
+    id: UUID,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AnalysisRun:
+    """Checked in a dependency: an exception inside the SSE generator can no longer become a 404."""
+    return await service.get_run(session, principal.org_id, id)
 
 
 @router.get("/{id}/events", response_class=EventSourceResponse)
 async def get_run_events(
-    id: UUID,
-    principal: Annotated[Principal, Depends(get_current_principal)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    run: Annotated[AnalysisRun, Depends(_sse_run)],
     last_event_id: Annotated[int | None, Header(alias="Last-Event-ID")] = None,
     query_last_id: int | None = Query(default=None, alias="last_event_id"),
 ) -> AsyncIterator[ServerSentEvent]:
-    run = await session.get(AnalysisRun, id)
-    if not run or run.org_id != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-
-    resolved_last_id = last_event_id if last_event_id is not None else query_last_id
-    async for ev in _stream_events(id, principal.org_id, resolved_last_id, session):
+    after = last_event_id if last_event_id is not None else query_last_id
+    async for ev in _stream_events(run.id, run.org_id, after):
         yield ev
 
 
 @router.post("/{id}/events", response_class=EventSourceResponse)
 async def post_run_events(
-    id: UUID,
-    principal: Annotated[Principal, Depends(get_current_principal)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    run: Annotated[AnalysisRun, Depends(_sse_run)],
     last_event_id: Annotated[int | None, Header(alias="Last-Event-ID")] = None,
     query_last_id: int | None = Query(default=None, alias="last_event_id"),
 ) -> AsyncIterator[ServerSentEvent]:
-    run = await session.get(AnalysisRun, id)
-    if not run or run.org_id != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
-
-    resolved_last_id = last_event_id if last_event_id is not None else query_last_id
-    async for ev in _stream_events(id, principal.org_id, resolved_last_id, session):
+    after = last_event_id if last_event_id is not None else query_last_id
+    async for ev in _stream_events(run.id, run.org_id, after):
         yield ev

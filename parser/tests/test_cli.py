@@ -11,6 +11,12 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ParserSettings reads ./.env; tests must never see the developer's real keys."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_cli_help_lists_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
@@ -18,7 +24,11 @@ def test_cli_help_lists_commands() -> None:
         assert command in result.output
 
 
-def test_cli_adapters_prints_json_lines() -> None:
+def test_cli_adapters_prints_json_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "NEWSAPI_KEY", "SERPAPI_KEY", "RSSHUB_BASE_URL", "CRUNCHBASE_API_KEY", "ADZUNA_APP_ID", "ADZUNA_APP_KEY"
+    ):  # fmt: skip
+        monkeypatch.delenv(key, raising=False)
     result = runner.invoke(app, ["adapters"])
     assert result.exit_code == 0
     rows = [json.loads(line) for line in result.output.splitlines()]
@@ -34,8 +44,16 @@ def test_cli_adapters_prints_json_lines() -> None:
         "careers_html",
         "wikidata",
         "crunchbase",
+        "reports",
+        "hibp",
+        "gleif",
+        "adzuna",
     }
     assert next(row for row in rows if row["id"] == "gdelt")["rate_limit"]["per_seconds"] == 5
+    enabled = {row["id"] for row in rows if row["enabled"]}
+    assert enabled == {
+        "google_news", "gdelt", "website", "jobs_ats", "careers_html", "wikidata", "reports", "hibp", "gleif"
+    }  # fmt: skip
 
 
 def test_cli_collect_writes_valid_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,7 +96,9 @@ def test_cli_collect_writes_valid_jsonl(tmp_path: Path, monkeypatch: pytest.Monk
     assert result.exit_code == 0, result.output
     [line] = out.read_text().splitlines()
     assert Document.model_validate_json(line).source_name == "gdelt"
-    assert seen == {"types": {"news", "website"}, "adapters": ["gdelt", "website"], "budget": 30}
+    budget = seen.pop("budget")
+    assert seen == {"types": {"news", "website"}, "adapters": ["gdelt", "website"]}
+    assert 15 <= budget <= 30  # --time-budget covers resolve + collect
     assert json.loads(result.stderr.splitlines()[-1])["stats"] == {"gdelt": 1}
 
 

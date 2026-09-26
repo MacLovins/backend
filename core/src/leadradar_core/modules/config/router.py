@@ -55,9 +55,46 @@ def validate_rule(kind: str, condition: dict, action: str, cap_value: object) ->
             cap_value=float(cap_value) if cap_value is not None else None,
         )
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors(include_url=False)
-        ) from e
+        raise _unprocessable(e) from e
+
+
+def _unprocessable(e: ValidationError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=e.errors(include_url=False, include_context=False),
+    )
+
+
+def validate_question(q: SignalQuestion) -> None:
+    """The stored question must map to ai.QuestionConfig, otherwise rescoring would fail later."""
+    try:
+        ai.QuestionConfig(
+            id=UUID(int=0),
+            key=q.key,
+            version=max(q.version or 1, 1),
+            text=q.text,
+            category=q.category,
+            polarity=q.polarity,
+            weight=q.weight,
+            source_types=set(q.source_types or []),
+            recency_days=q.recency_days,
+        )
+    except ValidationError as e:
+        raise _unprocessable(e) from e
+
+
+def validate_icp(icp: ICPProfileIn) -> None:
+    try:
+        ai.ICPConfig(
+            countries=icp.countries,
+            industries_any=icp.industries_any,
+            employees_min=icp.employees_min,
+            employees_max=icp.employees_max,
+            revenue_min_eur=int(icp.revenue_min_eur) if icp.revenue_min_eur is not None else None,
+            nice_to_have=(icp.nice_to_have or {}).get("criteria", []),
+        )
+    except ValidationError as e:
+        raise _unprocessable(e) from e
 
 
 # --- Services ---
@@ -183,6 +220,19 @@ async def create_question(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SignalQuestionOut:
+    service = await session.get(Service, id)
+    if not service or service.org_id != principal.org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+    existing = (
+        await session.execute(
+            select(SignalQuestion.id).where(SignalQuestion.service_id == id, SignalQuestion.key == q_in.key)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Question key '{q_in.key}' already exists in this service (deleted questions keep their key)",
+        )
     q = SignalQuestion(
         org_id=principal.org_id,
         service_id=id,
@@ -199,6 +249,7 @@ async def create_question(
         version=1,
         is_active=True,
     )
+    validate_question(q)
     session.add(q)
     await session.commit()
     await session.refresh(q)
@@ -225,15 +276,18 @@ async def update_question(
     meaning_changed = any(
         field in changes and changes[field] != getattr(q, field) for field in MEANING_FIELDS
     )
+    rescore = any(
+        field in changes and changes[field] != getattr(q, field) for field in ("weight", "is_active")
+    )
     for field, val in changes.items():
         setattr(q, field, val)
+    validate_question(q)
     if meaning_changed:  # stale: new keywords now, new extraction on the next analysis (fingerprint)
         q.version += 1
         q.keywords_status = "pending"
-    await session.commit()
-    if not meaning_changed and ("weight" in changes or "is_active" in changes):
+    if rescore:  # weight or activity only change scoring: save and rescore in one transaction
         await rescore_service(session, principal.org_id, q.service_id)
-        await session.commit()
+    await session.commit()
     await session.refresh(q)
     if meaning_changed:
         await enqueue_expand(q.id)
@@ -250,9 +304,11 @@ async def delete_question(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> None:
+    """Soft delete: the question stops counting, its signals and history stay (rescored in one transaction)."""
     q = await session.get(SignalQuestion, id)
-    if q and q.org_id == principal.org_id:
-        await session.delete(q)
+    if q and q.org_id == principal.org_id and q.is_active:
+        q.is_active = False
+        await rescore_service(session, principal.org_id, q.service_id)
         await session.commit()
 
 
@@ -301,6 +357,7 @@ async def put_icp(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ICPProfileOut:
+    validate_icp(icp_in)
     stmt = select(ICPProfile).where(ICPProfile.service_id == id, ICPProfile.org_id == principal.org_id)
     res = await session.execute(stmt)
     icp = res.scalar_one_or_none()
@@ -327,7 +384,6 @@ async def put_icp(
         )
         session.add(icp)
 
-    await session.commit()
     await rescore_service(session, principal.org_id, id)
     await session.commit()
     await session.refresh(icp)
@@ -372,7 +428,6 @@ async def create_rule(
         is_active=rule_in.is_active,
     )
     session.add(rule)
-    await session.commit()
     await rescore_service(session, principal.org_id, id)
     await session.commit()
     await session.refresh(rule)
@@ -398,7 +453,6 @@ async def update_rule(
         setattr(rule, field, val)
     validate_rule(rule.kind, rule.condition, rule.action, rule.cap_value)
 
-    await session.commit()
     await rescore_service(session, principal.org_id, rule.service_id)
     await session.commit()
     await session.refresh(rule)
@@ -419,7 +473,6 @@ async def delete_rule(
     if rule and rule.org_id == principal.org_id:
         service_id = rule.service_id
         await session.delete(rule)
-        await session.commit()
         await rescore_service(session, principal.org_id, service_id)
         await session.commit()
 
@@ -467,9 +520,7 @@ async def put_scoring_profile(
     try:
         ai.ScoringProfile(id=UUID(int=0), version=1, **profile_in.params)
     except ValidationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors(include_url=False)
-        ) from e
+        raise _unprocessable(e) from e
 
     # Set all existing profiles for this service to is_current=False
     await session.execute(
@@ -497,7 +548,6 @@ async def put_scoring_profile(
         is_current=True,
     )
     session.add(profile)
-    await session.commit()
     result = await rescore_service(session, principal.org_id, id)
     await session.commit()
     return RescoreResult(version=new_version, **result)

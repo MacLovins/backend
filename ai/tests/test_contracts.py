@@ -93,7 +93,8 @@ def test_scoring_profile_defaults_match_architecture():
     p = ScoringProfile(id=uuid4(), version=1)
     assert p.weights == {"high": 3, "medium": 2, "low": 1}
     assert p.strength_values == {"weak": 0.35, "moderate": 0.65, "strong": 1.0}
-    assert (p.tau_intent, p.tau_risk) == (3.0, 2.0)
+    assert (p.tau_intent, p.tau_risk) == (5.0, 2.0)
+    assert (p.fit_floor, p.undated_age_days) == (20.0, 90)
     assert (p.fit_exponent, p.intent_exponent, p.risk_penalty) == (0.4, 0.6, 0.5)
     assert p.tiers == {"hot": 65, "warm": 40}
     assert p.half_life_days["jobs"] == 45 and p.half_life_days["registry"] is None

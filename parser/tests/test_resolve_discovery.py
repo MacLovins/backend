@@ -4,8 +4,9 @@ import respx
 from conftest import fixture_json
 from leadradar_parser import CompanyRef, DiscoveryQuery, HttpClient
 from leadradar_parser.discovery import discover
+from leadradar_parser.errors import SourceRequestFailed
 from leadradar_parser.resolve import detect_ats, resolve_company
-from leadradar_parser.wikidata import API_URL, SPARQL_URL, resolve_firmographics
+from leadradar_parser.wikidata import API_URL, QLEVER_URL, SPARQL_URL, resolve_firmographics
 
 
 @pytest.mark.parametrize(
@@ -103,48 +104,88 @@ async def test_wikidata_homonym_is_resolved_by_domain(http: HttpClient) -> None:
 
 
 @respx.mock
-async def test_discovery_sparql_filters_and_dedupes(http: HttpClient) -> None:
+async def test_discovery_queries_each_industry_qid_and_merges(http: HttpClient) -> None:
     def row(qid: str, website: str, employees: str | None) -> dict:
         data = {
             "item": {"value": f"http://www.wikidata.org/entity/{qid}"},
             "itemLabel": {"value": f"Company {qid}"},
             "website": {"value": website},
             "cc": {"value": "DE"},
-            "industries": {
-                "value": "http://www.wikidata.org/entity/Q177777|http://www.wikidata.org/entity/Q46970"
-            },
         }
         if employees:
             data["employees"] = {"value": employees}
         return data
 
-    bindings = [
-        row("Q1", "https://www.one.example/", "9000"),
-        row("Q1", "https://one-alt.example/", "9000"),  # same company, second website
-        row("Q2", "https://two.example", None),
-        row("Q3", "https://skip.example", "7000"),
-    ]
-    sparql = respx.get(SPARQL_URL).mock(
-        return_value=httpx.Response(200, json={"results": {"bindings": bindings}})
-    )
+    answers = {
+        # logistics, P452 wd:Q177777
+        "wdt:P452 wd:Q177777": [
+            row("Q1", "https://www.one.example/", "9000"),
+            row("Q1", "https://one-alt.example/", "9000"),  # same company, second website
+            row("Q2", "https://two.example", None),  # unknown size is kept
+            row("Q3", "https://skip.example", "7000"),  # excluded domain
+            row("Q4", "https://small.example", "100"),  # below employees_min
+        ],
+        # airlines class via P31: Q1 is also an airline → industries merged
+        "wdt:P31 wd:Q46970": [
+            row("Q1", "https://www.one.example/", "12000"),
+            row("Q5", "https://air.example", "200000"),
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params["query"]
+        if "wd:Q651658" in query:
+            return httpx.Response(503)  # one slow/broken industry must not lose the others
+        rows = next((value for key, value in answers.items() if key in query), [])
+        return httpx.Response(200, json={"results": {"bindings": rows}})
+
+    sparql = respx.get(QLEVER_URL).mock(side_effect=handler)
+    wdqs = respx.get(SPARQL_URL).mock(return_value=httpx.Response(503))  # fallback also down for Q651658
     query = DiscoveryQuery(
         countries=["de", "AT"],
         industries=["logistics", "airlines"],
         employees_min=5000,
-        employees_max=100000,
+        employees_max=150000,
         exclude_domains=["www.skip.example"],
         limit=10,
     )
     results = await discover(query, http=http)
 
     assert [(item.domain, item.wikidata_qid, item.employees) for item in results] == [
-        ("one.example", "Q1", 9000),
+        ("one.example", "Q1", 12000),
         ("two.example", "Q2", None),
-    ]
+    ]  # Q5 dropped by employees_max, Q3 excluded, Q4 too small
     assert results[0].industry_ids == ["airlines", "logistics"]
-    sent = sparql.calls[0].request.url.params["query"]
-    assert "wd:Q183 wd:Q40" in sent and "wd:Q46970" in sent
-    assert "COALESCE(MAX(?emp), 5000) >= 5000 && COALESCE(MAX(?emp), 100000) <= 100000" in sent
+    sent = [call.request.url.params["query"] for call in sparql.calls]
+    assert all("VALUES ?country { wd:Q183 wd:Q40 }" in item for item in sent)
+    assert any("wdt:P31 wd:Q46970" in item for item in sent)
+    assert any("wdt:P452 wd:Q1757562" in item for item in sent)
+    # WDQS is only the fallback: hit (with one HTTP retry) for the industry QLever failed on
+    assert wdqs.called and all("wd:Q651658" in call.request.url.params["query"] for call in wdqs.calls)
+
+
+@respx.mock
+async def test_discovery_falls_back_to_wdqs_when_qlever_fails(http: HttpClient) -> None:
+    respx.get(QLEVER_URL).mock(return_value=httpx.Response(502))
+    row = {
+        "item": {"value": "http://www.wikidata.org/entity/Q9"},
+        "itemLabel": {"value": "Fallback Logistics"},
+        "website": {"value": "https://fallback.example"},
+        "cc": {"value": "DE"},
+    }
+    respx.get(SPARQL_URL).mock(return_value=httpx.Response(200, json={"results": {"bindings": [row]}}))
+    [candidate] = await discover(
+        DiscoveryQuery(countries=["DE"], industries=["logistics"], limit=5), http=http
+    )
+    assert candidate.domain == "fallback.example" and candidate.industry_ids == ["logistics"]
+
+
+@respx.mock
+async def test_discovery_raises_when_every_query_fails(http: HttpClient) -> None:
+    respx.get(QLEVER_URL).mock(return_value=httpx.Response(503))
+    respx.get(SPARQL_URL).mock(return_value=httpx.Response(503))
+    with pytest.raises(SourceRequestFailed):
+        await discover(DiscoveryQuery(countries=["DE"], industries=["logistics"]), http=http)
 
 
 async def test_discovery_unknown_taxonomy_makes_no_request(http: HttpClient) -> None:
@@ -187,6 +228,8 @@ async def test_resolve_detects_ats_on_careers_page_and_fills_firmographics(http:
 async def test_resolve_survives_unreachable_homepage(http: HttpClient) -> None:
     respx.get(url__startswith="https://example.com/").mock(side_effect=httpx.ConnectError("down"))
     respx.get(API_URL).mock(return_value=httpx.Response(200, json={"search": []}))
+    gleif = respx.get("https://api.gleif.org/api/v1/lei-records").mock(return_value=httpx.Response(503))
     resolved = await resolve_company(CompanyRef(name="Example", domain="example.com"), http=http)
+    assert gleif.called and "gleif unavailable" in resolved.notes
     assert resolved.firmographics is None and resolved.ats is None
     assert {"homepage unavailable", "careers not found", "wikidata entity not found"} <= set(resolved.notes)

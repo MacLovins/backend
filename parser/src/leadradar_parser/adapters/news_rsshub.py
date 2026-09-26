@@ -1,76 +1,67 @@
-import os
-import urllib.parse
-import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
+from urllib.parse import quote
 
 from ..contracts import CollectPlan, Document, RateLimit, ResolvedCompany
+from ..errors import ParserError
 from ..http import HttpClient
-from ..normalize import canonicalize_url, content_hash
-from .base import SourceAdapter
+from ..normalize import utc_datetime
+from .common import make_document, parse_feed, raise_if_nothing_succeeded, search_name
+from .news_google import GoogleNewsAdapter
 
 
-class RSSHubAdapter(SourceAdapter):
-    """Fetches company news, blog posts, and press releases via RSSHub feeds.
+class RSSHubAdapter:
+    """Keyword news feeds from a self-hosted RSSHub instance.
 
-    Defaults to public RSSHub instance or custom RSSHUB_BASE_URL.
+    Enabled only when RSSHUB_BASE_URL is set: the public rsshub.app answers automated clients with a
+    Cloudflare challenge (HTTP 403), so it cannot be a default source. The route is RSSHUB_ROUTE
+    (default `/bing/search/{query}`); queries are the company search name plus the plan's news topics.
     """
 
     id = "rsshub"
     source_type = "news"
-    requires_env = None
-    rate_limit = RateLimit(requests=2, per_seconds=1, scope="global")
+    requires_env = "RSSHUB_BASE_URL"
+    rate_limit = RateLimit(requests=1, per_seconds=1, scope="global")
 
     async def fetch(
         self, company: ResolvedCompany, plan: CollectPlan, http: HttpClient
     ) -> AsyncIterator[Document]:
-        base_url = os.getenv("RSSHUB_BASE_URL", "https://rsshub.app").rstrip("/")
-        name = company.name or company.domain
-
-        # Query RSSHub search / google news or company custom feeds
-        queries = [
-            f"{name} AI automation",
-            f"{name} cybersecurity digital transformation",
-        ]
-
-        seen_links: set[str] = set()
-        for q in queries:
-            feed_url = f"{base_url}/google/news/{urllib.parse.quote(q)}"
+        base_url = (http.settings.env(self.requires_env) or "").rstrip("/")
+        if not base_url:
+            return
+        route = "/" + http.settings.rsshub_route.lstrip("/")
+        failures: list[Exception] = []
+        succeeded = emitted = 0
+        seen: set[str] = set()
+        for query in self.queries(company, plan):
+            feed_url = base_url + route.replace("{query}", quote(query, safe=""))
             try:
-                response = await http.get(feed_url, check_robots=False, attempts=1)
-                if response.status_code != 200:
-                    continue
-                root = ET.fromstring(response.content)
-            except Exception:
+                items = parse_feed((await http.get(feed_url, check_robots=False, attempts=1)).content)
+            except (ParserError, ValueError) as exc:
+                failures.append(exc)
                 continue
-
-            for item in root.iter("item"):
-                title = (item.findtext("title") or "").strip()
-                link = (item.findtext("link") or "").strip()
-                if not title or link in seen_links:
+            succeeded += 1
+            for item in items:
+                published_at = utc_datetime(item.published)  # unknown date stays None, never "now"
+                if not item.title or not item.link or item.link in seen:
                     continue
-                seen_links.add(link)
-
-                description = (item.findtext("description") or "").strip()
-                pub_date_str = item.findtext("pubDate")
-                published_at = datetime.now(UTC)
-                if pub_date_str:
-                    try:
-                        published_at = parsedate_to_datetime(pub_date_str).astimezone(UTC)
-                    except Exception:
-                        pass
-
-                yield Document(
+                if published_at and published_at < plan.since:
+                    continue
+                seen.add(item.link)
+                yield make_document(  # language is detected from the title + snippet
                     source_type="news",
                     source_name=self.id,
-                    url=link or f"{base_url}/news",
-                    canonical_url=canonicalize_url(link) if link else "",
-                    title=title,
-                    text=f"{title}\n\n{description}" if description else title,
+                    url=item.link,
+                    title=item.title,
+                    text=f"{item.title}\n{item.description}".strip(),
                     published_at=published_at,
-                    fetched_at=datetime.now(UTC),
-                    language="en",
-                    content_hash=content_hash(f"{title}{link}"),
-                    meta={"feed": feed_url, "query": q},
+                    meta={"feed": feed_url, "query": query, "publisher": item.source, "headline_only": True},
                 )
+                emitted += 1
+                if emitted >= plan.max_items_per_source:
+                    return
+        raise_if_nothing_succeeded(succeeded, failures)
+
+    @staticmethod
+    def queries(company: ResolvedCompany, plan: CollectPlan) -> list[str]:
+        """`"<search name>"` and `"<search name>" (<news topics>)` — the same queries as Google News."""
+        return GoogleNewsAdapter._queries(search_name(company), plan)

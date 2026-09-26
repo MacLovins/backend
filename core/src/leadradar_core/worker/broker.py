@@ -1,9 +1,11 @@
 """Taskiq broker: Redis list queue in dev/demo, in-memory in tests.
 
 taskiq worker leadradar_core.worker.broker:broker --max-async-tasks 3
+taskiq scheduler leadradar_core.worker.broker:scheduler   (periodic tasks from `schedule` labels, CO-22)
 """
 
-from taskiq import AsyncBroker, InMemoryBroker, TaskiqEvents, TaskiqState
+from taskiq import AsyncBroker, InMemoryBroker, TaskiqEvents, TaskiqScheduler, TaskiqState
+from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import ListQueueBroker
 
 from leadradar_core.settings import settings
@@ -37,4 +39,8 @@ async def _shutdown(state: TaskiqState) -> None:
 
 
 # register tasks on the broker (the worker CLI imports only this module)
-from leadradar_core.worker import tasks  # noqa: E402, F401
+from leadradar_core.worker import outreach, tasks  # noqa: E402, F401
+
+# periodic tasks (CO-22): `taskiq scheduler leadradar_core.worker.broker:scheduler` reads their schedule labels
+scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker)])
+from leadradar_core.worker import scheduled  # noqa: E402, F401

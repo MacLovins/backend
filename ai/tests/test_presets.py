@@ -153,7 +153,8 @@ def test_cyber_fit_does_not_penalise_non_financial_regulated_sectors():
     bundle = load_preset("cybersecurity").to_bundle()
     assert score_company(make_company(), bundle, [], NOW).fit == 100.0  # logistics
     assert score_company(make_company(industry_ids=["insurance"]), bundle, [], NOW).fit == 100.0
-    assert score_company(make_company(industry_ids=["retail"]), bundle, [], NOW).fit == 0.0
+    retail = score_company(make_company(industry_ids=["retail"]), bundle, [], NOW)
+    assert retail.fit == 20.0 and not retail.outside_icp  # no nice-to-have match: the fit floor
 
 
 def test_cyber_vendor_is_excluded():

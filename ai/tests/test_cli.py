@@ -206,3 +206,23 @@ def test_file_cache_and_usage_sink(tmp_path):
         asyncio.run(usage.record(LLMCallRecord(**base, status=status, cache_hit=status == "cache_hit")))
     assert asyncio.run(usage.used_today("m1")) == 2
     assert asyncio.run(FileUsageSink(tmp_path / "usage.jsonl").used_today("m2")) == 0
+
+
+def test_suggest_command(monkeypatch):
+    question = {
+        "key": "cy_ot",
+        "label": "OT security",
+        "text": "Is the company securing OT networks?",
+        "category": "expansion",
+        "polarity": "positive",
+        "weight": "medium",
+        "source_types": ["news"],
+        "recency_days": 365,
+    }
+    llm = FakeLLM([{"questions": [question], "rules": []}])
+    monkeypatch.setattr(cli, "make_llm", lambda live, cache_dir: (llm, None))
+    result = CliRunner().invoke(cli.app, ["suggest", "--preset", "cybersecurity"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert [q["question"]["key"] for q in data["questions"]] == ["cy_ot"]
+    assert llm.calls_for("suggest_questions")[0].pool == "cheap"

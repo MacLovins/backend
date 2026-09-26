@@ -18,6 +18,7 @@ from leadradar_core.modules.config.models import (
     Service,
     SignalQuestion,
 )
+from leadradar_core.modules.intelligence.evidence import evidence_key
 from leadradar_core.modules.intelligence.models import Document, Signal
 from leadradar_core.modules.leads.models import LeadScore
 
@@ -65,6 +66,26 @@ def company_ref(company: Company) -> parser.CompanyRef:
         newsroom_url=company.newsroom_url,
         ats=ats,
         wikidata_qid=company.wikidata_qid,
+    )
+
+
+def firmographics(company: Company) -> parser.Firmographics | None:
+    """Stored firmographics for collection, so adapters reuse the LEI / QID / Crunchbase id instead of
+    searching again (the GLEIF, Wikidata and Crunchbase adapters)."""
+    if not any(
+        (company.wikidata_qid, company.lei, company.crunchbase_id, company.employees, company.country_code)
+    ):
+        return None
+    return parser.Firmographics(
+        country_code=company.country_code,
+        hq_city=company.hq_city,
+        industry_ids=list(company.industry_ids or []),
+        employees=company.employees,
+        revenue_eur=_int(company.revenue_eur),
+        lei=company.lei,
+        wikidata_qid=company.wikidata_qid,
+        crunchbase_id=company.crunchbase_id,
+        source="core",
     )
 
 
@@ -224,7 +245,8 @@ def signal_row(
         question_id=signal.question_id,
         question_key=signal.question_key,
         question_version=signal.question_version,
-        document_id=signal.document_id,
+        # derived NIS2/DORA signals have no source document (their document_id is synthetic)
+        document_id=None if signal.source_type == "derived" else signal.document_id,
         chunk_id=signal.chunk_id,
         category=signal.category,
         polarity=signal.polarity,
@@ -244,6 +266,7 @@ def signal_row(
         status="active",
         model=signal.model,
         prompt_version=signal.prompt_version,
+        evidence_key=evidence_key(signal.question_key, signal.quote, signal.url),
     )
 
 

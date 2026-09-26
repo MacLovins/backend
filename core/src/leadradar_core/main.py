@@ -3,15 +3,15 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as aioredis
 import structlog
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from leadradar_auth import create_auth_router
+from leadradar_auth import auth_settings, create_auth_router
 from sqlalchemy import text
 
 from leadradar_core.db.session import engine, get_db_session
-from leadradar_core.errors import DomainException, ErrorDetail, ErrorResponse
+from leadradar_core.errors import ERROR_RESPONSES, register_exception_handlers
 from leadradar_core.logging import setup_logging
+from leadradar_core.security import OriginCheckMiddleware, configure_security, is_dev_env
 from leadradar_core.settings import settings
 
 
@@ -52,10 +52,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    configure_security(settings)  # fails fast outside dev without a real JWT secret
+    docs_enabled = is_dev_env(settings.ENV)
     app = FastAPI(
         title="LeadRadar API",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+        responses=ERROR_RESPONSES,
     )
 
     # CORS
@@ -66,22 +72,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(OriginCheckMiddleware, app_settings=settings, cookie_name=auth_settings.COOKIE_NAME)
 
-    # Error Handlers
-    @app.exception_handler(DomainException)
-    async def domain_exception_handler(request: Request, exc: DomainException) -> JSONResponse:
-        status_code = status.HTTP_400_BAD_REQUEST
-        if exc.code == "not_found":
-            status_code = status.HTTP_404_NOT_FOUND
-        elif exc.code == "conflict":
-            status_code = status.HTTP_409_CONFLICT
-
-        return JSONResponse(
-            status_code=status_code,
-            content=ErrorResponse(
-                error=ErrorDetail(code=exc.code, message=exc.message, details=exc.details)
-            ).model_dump(),
-        )
+    register_exception_handlers(app)
 
     # Health endpoints
     @app.get("/health", tags=["health"])
@@ -124,19 +117,23 @@ def create_app() -> FastAPI:
     from leadradar_core.modules.accounts.router import router as accounts_router
     from leadradar_core.modules.activity.router import router as activity_router
     from leadradar_core.modules.config.router import router as config_router
+    from leadradar_core.modules.config.suggest_router import router as config_suggest_router
     from leadradar_core.modules.discovery.router import router as discovery_router
     from leadradar_core.modules.feedback.router import router as feedback_router
     from leadradar_core.modules.leads.router import router as leads_router
     from leadradar_core.modules.meta.router import router as meta_router
+    from leadradar_core.modules.outreach.router import router as outreach_router
     from leadradar_core.modules.runs.router import router as runs_router
 
     app.include_router(create_auth_router(get_session=get_db_session), prefix="/api/v1")
     app.include_router(meta_router, prefix="/api/v1")
     app.include_router(config_router, prefix="/api/v1")
+    app.include_router(config_suggest_router, prefix="/api/v1")
     app.include_router(accounts_router, prefix="/api/v1")
     app.include_router(discovery_router, prefix="/api/v1")
     app.include_router(runs_router, prefix="/api/v1")
     app.include_router(leads_router, prefix="/api/v1")
+    app.include_router(outreach_router, prefix="/api/v1")
     app.include_router(feedback_router, prefix="/api/v1")
     app.include_router(activity_router, prefix="/api/v1")
 

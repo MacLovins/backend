@@ -6,8 +6,10 @@ from typing import Any
 
 import httpx
 import trafilatura
+from lxml import etree, html
 
-from ..contracts import Document, SourceType
+from ..contracts import Document, ResolvedCompany, SourceType
+from ..errors import ParserError
 from ..normalize import (
     MAX_PAGE_CHARS,
     canonicalize_url,
@@ -80,3 +82,58 @@ def _extract_page(document: str, url: str | None) -> ExtractedPage | None:
     if not text:
         return None
     return ExtractedPage(text=text, title=data.get("title") or None, date=data.get("date") or None)
+
+
+@dataclass(frozen=True)
+class FeedItem:
+    title: str
+    link: str
+    description: str
+    published: str | None
+    source: str | None
+
+
+def search_name(company: ResolvedCompany) -> str:
+    """Name for news queries: legal name first; short names like "DHL" get a longer alias (homonyms)."""
+    legal_name = company.firmographics.legal_name if company.firmographics else None
+    name = (legal_name or company.name or company.domain).strip()
+    if len(name) <= 4:
+        longer = next((alias for alias in company.aliases if len(alias.strip()) > len(name)), None)
+        name = longer.strip() if longer else name
+    return name.replace('"', "")
+
+
+def parse_feed(content: bytes) -> list[FeedItem]:
+    """RSS 2.0 items; entity expansion and network access are disabled (untrusted XML)."""
+    try:
+        root = etree.fromstring(content, parser=etree.XMLParser(resolve_entities=False, no_network=True))
+    except etree.XMLSyntaxError as exc:
+        raise ParserError(f"Invalid RSS feed: {exc}") from exc
+    items = []
+    for node in root.iter("item"):
+        items.append(
+            FeedItem(
+                title=(node.findtext("title") or "").strip(),
+                link=(node.findtext("link") or "").strip(),
+                description=plain_text(node.findtext("description") or ""),
+                published=(node.findtext("pubDate") or "").strip() or None,
+                source=(node.findtext("source") or "").strip() or None,
+            )
+        )
+    return items
+
+
+def plain_text(value: str) -> str:
+    value = value.strip()
+    if not value or "<" not in value:
+        return value
+    try:
+        return " ".join(html.fromstring(value).text_content().split())
+    except (etree.ParserError, ValueError):
+        return value
+
+
+def raise_if_nothing_succeeded(succeeded: int, failures: list[Exception]) -> None:
+    """Adapters with several queries tolerate partial failures, but a total failure must reach `errors`."""
+    if not succeeded and failures:
+        raise failures[0]
