@@ -65,7 +65,7 @@
 | CO-24 | CI (GitHub Actions): ruff, pytest (Postgres service), import-linter, снимок OpenAPI | P0 | Зелёный пайплайн |
 | CO-A1 | Надстройка: `POST /leads/{company_id}/outreach` → `ai.generate_outreach` | После ядра | ARCHITECTURE §4.13 |
 | CO-A2 | Надстройка: потребитель алертов (`signal.detected` сильный, `lead.tier_changed` → Telegram / e-mail) | После ядра | — |
-| CO-A3 | Надстройка: HubSpot — `POST /leads/{company_id}/push/hubspot` и потребитель `lead.tier_changed` (private app token) | После ядра | — |
+| CO-A3 | Надстройка: HubSpot — `POST /leads/{company_id}/push/hubspot` (только ручная отправка, private app token, `FEATURE_HUBSPOT`); `GET /integrations/hubspot` для кнопки | После ядра | `pytest core/tests/test_hubspot.py` |
 
 ### 1.4 Входы и выходы
 
