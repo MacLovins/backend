@@ -1,19 +1,5 @@
 import asyncio
 from logging.config import fileConfig
-from pathlib import Path
-import sys
-
-# Ensure all workspace packages are discoverable
-current_file = Path(__file__).resolve()
-workspace_root = current_file.parents[4]
-for pkg_path in [
-    workspace_root / "backend" / "backend" / "src",
-    workspace_root / "backend" / "auth" / "src",
-    workspace_root / "backend" / "ai" / "src",
-    workspace_root / "parser" / "src",
-]:
-    if str(pkg_path) not in sys.path:
-        sys.path.insert(0, str(pkg_path))
 
 from alembic import context
 import sqlalchemy as sa

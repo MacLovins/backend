@@ -1,0 +1,47 @@
+name: TS types
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - openapi.json
+      - clients/ts/**
+      - .github/workflows/ts-types.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ts-types
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: "@maclovins"
+
+      - name: Generate types
+        run: npx --yes openapi-typescript@7.13.0 ../../openapi.json -o index.d.ts
+
+      - name: Set version
+        # major.minor from info.version in openapi.json, patch = CI run number
+        run: |
+          base=$(node -p "require('../../openapi.json').info.version.split('.').slice(0,2).join('.')")
+          npm version --no-git-tag-version "${base}.${GITHUB_RUN_NUMBER}"
+
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

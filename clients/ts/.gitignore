@@ -1,0 +1,4 @@
+# Generated in CI from ../../openapi.json
+index.d.ts
+node_modules/
+package-lock.json

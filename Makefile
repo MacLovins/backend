@@ -1,53 +1,61 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
-UV_CORE := uv run --package leadradar-core
 
-.PHONY: help setup sync up down logs migrate seed api worker test lint
+.PHONY: help setup up down ps logs build api worker migrate seed test lint ts-types
 
 help:
-	@echo "LeadRadar backend — из корня репо:"
-	@echo "  make setup    uv sync + postgres/redis + миграции + seed"
-	@echo "  make up       только postgres и redis"
-	@echo "  make down     остановить postgres/redis"
+	@echo "LeadRadar backend — всё в docker compose, на хост ничего ставить не нужно:"
+	@echo "  make setup    собрать образ, поднять всё, накатить миграции, засеять демо-данные"
+	@echo "  make up       поднять postgres, redis, api, worker (в фоне, с пересборкой образа)"
+	@echo "  make down     остановить всё (данные в volumes остаются)"
+	@echo "  make ps       статус контейнеров"
+	@echo "  make logs     логи api + worker"
+	@echo "  make build    только пересобрать образ"
+	@echo "  make api      api в переднем плане с логами (после правок кода: Ctrl+C и снова make api)"
+	@echo "  make worker   worker в переднем плане с логами"
 	@echo "  make migrate  alembic upgrade head"
 	@echo "  make seed     демо-данные (lr seed)"
-	@echo "  make api      FastAPI с --reload  (терминал 1)"
-	@echo "  make worker   Taskiq worker       (терминал 2)"
-	@echo "  make test     pytest без сети"
+	@echo "  make test     pytest (без сети; нужен postgres/redis — поднимутся сами)"
 	@echo "  make lint     import-linter + ruff"
+	@echo "  make ts-types TS-типы из openapi.json -> clients/ts/index.d.ts"
 
-setup: sync up migrate seed
+setup: up migrate seed
 	@echo
-	@echo "Инфра готова. Дальше в двух терминалах:"
-	@echo "  make api"
-	@echo "  make worker"
-
-sync:
-	uv sync --all-packages
+	@echo "Готово. API: http://127.0.0.1:8000/docs  Логи: make logs"
 
 up:
-	$(COMPOSE) up -d postgres redis
+	$(COMPOSE) up -d --build postgres redis api worker
 
 down:
-	$(COMPOSE) stop postgres redis
+	$(COMPOSE) down
+
+ps:
+	$(COMPOSE) ps
 
 logs:
-	$(COMPOSE) logs -f postgres redis
+	$(COMPOSE) logs -f api worker
 
-migrate: up
-	$(UV_CORE) alembic -c core/alembic.ini upgrade head
-
-seed:
-	uv run lr seed
+build:
+	$(COMPOSE) build api
 
 api:
-	$(UV_CORE) uvicorn leadradar_core.main:app --reload --host 127.0.0.1 --port 8000
+	$(COMPOSE) up --build api
 
 worker:
-	$(UV_CORE) taskiq worker leadradar_core.worker.broker:broker --workers 1 --max-async-tasks 3
+	$(COMPOSE) up --build worker
+
+migrate:
+	$(COMPOSE) run --rm --build migrate
+
+seed:
+	$(COMPOSE) run --rm --build seed
 
 test:
-	uv run pytest
+	$(COMPOSE) run --rm --build test
 
 lint:
-	uv run lint-imports && uv run ruff check . && uv run ruff format --check .
+	$(COMPOSE) run --rm --build lint
+
+ts-types:
+	docker run --rm -u $$(id -u):$$(id -g) -e npm_config_cache=/tmp/.npm -v $(CURDIR):/w -w /w/clients/ts node:22-alpine \
+		npx --yes openapi-typescript@7.13.0 ../../openapi.json -o index.d.ts
