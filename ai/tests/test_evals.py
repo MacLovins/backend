@@ -2,13 +2,17 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from leadradar_ai import cli
+from leadradar_ai.contracts import Snippet
 from leadradar_ai.evals import (
     CompanyCase,
     Decision,
     GoldenLabel,
+    GoldenOracleLLM,
     compute_metrics,
     default_golden_dir,
     load_companies,
@@ -17,9 +21,13 @@ from leadradar_ai.evals import (
     run_eval,
     write_report,
 )
+from leadradar_ai.evals.runner import company_profile
+from leadradar_ai.extraction import Answer, Evidence, ServiceExtraction
+from leadradar_ai.local import load_parser_jsonl
 from leadradar_ai.presets import load_preset
 from leadradar_ai.retrieval import PrefilterConfig
 from leadradar_ai.testing import FakeEmbedder, FakeLLM
+from leadradar_ai.verification import find_quote, verify_extraction
 from typer.testing import CliRunner
 
 NOW = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
@@ -221,16 +229,6 @@ def test_label_file_validation(tmp_path):
         load_labels(path)
 
 
-def test_packaged_golden_set_is_consistent():
-    d = default_golden_dir()
-    lbls, cases = load_labels(d / "mvp.jsonl"), load_companies(d / "companies.yaml")
-    assert {"dhl.com", "lufthansagroup.com"} <= {lbl.company_domain for lbl in lbls}  # Annex A5
-    for lbl in lbls:
-        assert lbl.company_domain in cases
-        assert lbl.question_key in {q.key for q in load_preset(lbl.service).questions}
-    assert {"sap.com", "orange.com"} <= set(cases)  # vendor and homonym traps are ready for labelling
-
-
 def test_eval_cli(fixtures, tmp_path, monkeypatch):
     golden = tmp_path / "golden.jsonl"
     golden.write_text("\n".join(lbl.model_dump_json() for lbl in labels()[:4]) + "\n")
@@ -256,3 +254,129 @@ def test_eval_cli(fixtures, tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "precision 0.5" in result.output and (tmp_path / "out").exists()
     assert CliRunner().invoke(cli.app, [*args, "--fail-under", "0.8"]).exit_code == 1
+
+
+# --- the packaged golden set on committed fixtures (offline) ------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures"
+GOLDEN_NOW = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)  # fixtures were collected on 2026-09-25/26
+CODE_CHECKED = {"wrong_subject", "homonym"}
+
+
+@pytest.fixture(scope="module")
+def golden():
+    d = default_golden_dir()
+    return load_labels(d / "mvp.jsonl"), load_companies(d / "companies.yaml")
+
+
+@pytest.fixture(scope="module")
+def fixture_docs(golden):
+    _, cases = golden
+    return {domain: load_parser_jsonl(FIXTURES / case.fixture) for domain, case in cases.items()}
+
+
+def test_packaged_golden_set_is_consistent(golden, fixture_docs):
+    lbls, cases = golden
+    domains = {lbl.company_domain for lbl in lbls}
+    assert len(lbls) >= 100 and len(domains) >= 5
+    assert {"dhl.com", "lufthansagroup.com", "sap.com", "orange.com"} <= domains  # Annex A5 + both traps
+    for lbl in lbls:
+        assert lbl.company_domain in cases
+        question = {q.key: q for q in load_preset(lbl.service).questions}[lbl.question_key]
+        assert lbl.polarity == question.polarity
+        assert lbl.expected == "no" or any(e.expected == "accept" for e in lbl.evidence)
+        docs = fixture_docs[lbl.company_domain]
+        for e in lbl.evidence:  # every labelled quote is verbatim in the named fixture document
+            doc = next(d for d in docs if d.url == e.url)
+            assert find_quote(e.quote, doc.text) or find_quote(e.quote, doc.title or ""), e.quote
+    traps = [(lbl.company_domain, e.reason) for lbl in lbls for e in lbl.evidence if e.expected == "reject"]
+    assert ("orange.com", "homonym") in traps and ("sap.com", "vendor") in traps
+
+
+def _snippet(doc, n: int) -> Snippet:
+    return Snippet(
+        id=f"S{n}",
+        chunk_id=uuid4(),
+        document_id=doc.id,
+        text=doc.text,
+        char_start=0,
+        char_end=len(doc.text),
+        source_type=doc.source_type,
+        source_name=doc.source_name,
+        url=doc.url,
+        title=doc.title,
+        published_at=doc.published_at,
+        fetched_at=doc.fetched_at,
+        language=doc.language,
+        meta=doc.meta,
+    )
+
+
+def test_golden_evidence_through_verification(golden, fixture_docs):
+    """Item by item, a gullible model cites each labelled quote as being about the target company: supporting
+    evidence must verify, and every trap that code can recognise (homonyms, other entities) must be rejected
+    as wrong_subject — whatever the model said."""
+    lbls, cases = golden
+    accepted, rejected_traps = [], []
+    for lbl in lbls:
+        company = company_profile(cases[lbl.company_domain])
+        bundle = load_preset(lbl.service).to_bundle()
+        q = next(x for x in bundle.questions if x.key == lbl.question_key)
+        bundle = bundle.model_copy(update={"questions": [q]})
+        for item in lbl.evidence:
+            if item.expected == "reject" and item.reason not in CODE_CHECKED:
+                continue  # semantic traps (vendor, not an attack) are the model's call, see the oracle eval
+            doc = next(d for d in fixture_docs[lbl.company_domain] if d.url == item.url)
+            answer = Answer(
+                question_id=str(q.id),
+                answer="yes",
+                confidence=0.9,
+                rationale="r",
+                evidence=[
+                    Evidence(
+                        snippet_id="S1",
+                        quote=item.quote,
+                        subject="target_company",
+                        event_date=None,
+                        strength="strong",
+                        summary=item.quote[:200],
+                    )
+                ],
+            )
+            extraction = ServiceExtraction(answers={str(q.id): answer}, model="gullible")
+            result = verify_extraction(
+                extraction, bundle, [_snippet(doc, 1)], GOLDEN_NOW, "extract_signals@v1", company=company
+            )
+            if item.expected == "accept":
+                accepted.append((item.quote, [r.reason for r in result.rejected]))
+            else:
+                rejected_traps.append((item.quote, [r.reason for r in result.rejected]))
+    assert len(accepted) >= 40 and len(rejected_traps) >= 12
+    assert [a for a in accepted if a[1]] == []  # no supporting evidence lost to the checks
+    assert all(reasons == ["wrong_subject"] for _, reasons in rejected_traps), rejected_traps
+
+
+def test_golden_oracle_eval_offline(golden, tmp_path):
+    """The full pipeline on the committed fixtures with the golden-label oracle as the model: no trap may
+    become a signal, the vendor is flagged, and the report is written."""
+    lbls, cases = golden
+    result = asyncio.run(
+        run_eval(lbls, cases, FIXTURES, GoldenOracleLLM(lbls, cases), FakeEmbedder(), GOLDEN_NOW)
+    )
+    m = result.metrics
+    assert m.evaluated == len(lbls) and m.not_evaluated == 0 and result.notes == []
+    assert m.overall["precision"] == 1.0  # regression floor; measured 1.0 (18 TP, 0 FP)
+    assert m.overall["recall"] >= 0.55  # regression floor; measured 0.621 with hash embeddings (prefilter)
+    assert result.evidence_summary["traps_leaked"] == 0
+    assert result.evidence_summary["accept_verified"] >= 20
+
+    rules = {(s.company_domain, s.service): s.rules for s in result.scores}
+    assert rules[("sap.com", "intelligent_automation")] == ["IT or software vendor"]
+    assert rules[("sap.com", "cybersecurity")] == ["IT or software vendor"]
+    orange = [d for d in result.decisions if d.company_domain == "orange.com" and d.predicted == "yes"]
+    assert all("County" not in q for d in orange for q in d.quotes)
+
+    md, _ = write_report(result, tmp_path)
+    text = md.read_text()
+    assert "## Labelled evidence and traps" in text and "Traps that became a signal: 0 of" in text
+    assert "| sap.com | intelligent_automation |" in text and "IT or software vendor" in text

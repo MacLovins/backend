@@ -124,6 +124,7 @@ def create_app() -> FastAPI:
     from leadradar_core.modules.accounts.router import router as accounts_router
     from leadradar_core.modules.activity.router import router as activity_router
     from leadradar_core.modules.config.router import router as config_router
+    from leadradar_core.modules.config.suggest_router import router as config_suggest_router
     from leadradar_core.modules.discovery.router import router as discovery_router
     from leadradar_core.modules.feedback.router import router as feedback_router
     from leadradar_core.modules.leads.router import router as leads_router
@@ -133,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(create_auth_router(get_session=get_db_session), prefix="/api/v1")
     app.include_router(meta_router, prefix="/api/v1")
     app.include_router(config_router, prefix="/api/v1")
+    app.include_router(config_suggest_router, prefix="/api/v1")
     app.include_router(accounts_router, prefix="/api/v1")
     app.include_router(discovery_router, prefix="/api/v1")
     app.include_router(runs_router, prefix="/api/v1")

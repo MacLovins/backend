@@ -96,6 +96,7 @@ class CompanyProfile(BaseModel):
     own_domains: list[str] = []            # домены компании и её ATS — для фильтра сущности
     country_code: str | None = None; industry_ids: list[str] = []
     employees: int | None = None; revenue_eur: int | None = None; tags: list[str] = []
+    homonyms: list[str] = []               # другие сущности с тем же именем («Orange County») — не компания
 
 class QuestionConfig(BaseModel):
     id: UUID; key: str; version: int; text: str; category: str
@@ -125,7 +126,9 @@ class ScoringProfile(BaseModel):           # значения по умолча�
                                      "registry": 0.9, "news": 0.8, "derived": 0.7, "headline_only": 0.6}
     half_life_days: dict[str, int | None] = {"jobs": 45, "news": 120, "website": 240, "report": 365,
                                              "incident": 270, "registry": None, "derived": None}
-    tau_intent: float = 3.0; tau_risk: float = 2.0
+    tau_intent: float = 5.0; tau_risk: float = 2.0     # τ_intent = 3 насыщал Intent: смена веса H → L не меняла tier
+    fit_floor: float = 20                  # Fit компании, прошедшей must-have без совпадений nice-to-have
+    undated_age_days: int = 90             # минимальный возраст evidence без даты (для затухания)
     fit_exponent: float = 0.4; intent_exponent: float = 0.6; risk_penalty: float = 0.5
     tiers: dict[str, float] = {"hot": 65, "warm": 40}; min_confidence: float = 0.5
     max_evidence_per_question: int = 3
@@ -152,6 +155,7 @@ class VerifiedSignal(BaseModel):
     event_date: date | None; published_at: datetime | None
     flags: set[str] = set()                # fuzzy_quote | headline_only | undated | corroborated | derived
     model: str | None; prompt_version: str | None
+    fetched_at: datetime | None = None     # дата сбора документа — опора затухания для undated
 
 class StoredSignal(VerifiedSignal):
     id: UUID; detected_at: datetime; status: Literal["active", "rejected_by_user"] = "active"
@@ -173,6 +177,7 @@ class LeadScore(BaseModel):
     fit: float; intent: float; risk: float; priority: float; tier: Tier; disqualified: bool
     rule_hits: list[dict]; fit_details: list[dict]; breakdown: list[Contribution]
     why_now: list[Reason]; data_gaps: list[str]; computed_at: datetime
+    outside_icp: bool = False              # провален must-have: Fit = 0, Priority = 0, tier = cold + флаг в rule_hits
 
 class ProgressEvent(BaseModel):
     run_id: UUID; company_id: UUID; service_id: UUID | None = None
@@ -416,12 +421,12 @@ class ExtractionOutput(BaseModel):
 | Шаг | Правило | Иначе |
 |---|---|---|
 | V1 Цитата | Нормализация (NFKC, casefold, пробелы, кавычки, тире, многоточия) → точное вхождение во фрагмент → смещения в `document.text`. Если нет — `rapidfuzz.fuzz.partial_ratio ≥ 90` с выравниванием → флаг `fuzzy_quote`, confidence × 0.9 | `quote_not_found` |
-| V2 Субъект | `subject == target_company`. Для сторонних документов имя или алиас компании должны быть в заголовке или в окне ±300 символов | `wrong_subject` |
-| V3 Свежесть | `event_date` (если > сегодня + 7 дн. → берём `published_at`) или `published_at` / `fetched_at` в пределах `recency_days` | `stale` |
+| V2 Субъект | `subject == target_company` **и проверка кодом** (слову LLM не доверяем): для сторонних документов имя, алиас или домен компании — в окне ±300 символов вокруг цитаты (или в заголовке, если цитата в заголовке / в начале документа). Омонимы не считаются: «Orange County», «East Orange», слово со строчной буквы («orange juice»), акроним не капсом («Sap»), фразы из `CompanyProfile.homonyms` | `wrong_subject` |
+| V3 Свежесть | Дата события = `min(event_date, published_at)` — событие не может быть позже публикации; будущая `event_date` отбрасывается (→ `published_at`, не позже сегодня). Без дат — `fetched_at` + флаг `undated`. В пределах `recency_days` | `stale` |
 | V4 Согласованность | `yes` без валидного evidence → `unclear`. Evidence у `no` / `unclear` игнорируется | `no_evidence_for_yes` |
 | Порог | `confidence ≥ profile.min_confidence` | `below_confidence` |
-| Кап | На вопрос берём ≤ `max_evidence_per_question` (3) evidence с наибольшим вкладом — против накрутки одним событием | — |
-| V5 (P1) | Кластер «одно событие»: косинус summary ≥ 0.85 и даты ±14 дн. → главный сигнал + `corroborated`; в noisy-OR кластер идёт одним evidence с confidence = 1 − Π(1 − cᵢ), не выше 0.98 | — |
+| Кап | На вопрос берём ≤ `max_evidence_per_question` (3) **событий** (кластеров V5) с наибольшим вкладом, до 3 перепечаток в каждом — против накрутки одним событием | — |
+| V5 (P1) | Кластер «одно событие» (`scoring/corroboration.py`, без эмбеддингов): нормализованные цитата или summary похожи (token_sort_ratio ≥ 82 или вхождение одного в другой при ≥ 5 словах), даты ±14 дн., числа не противоречат → все члены кластера + `corroborated`, если источников (URL) ≥ 2; в noisy-OR кластер идёт одним evidence с confidence = 1 − Π(1 − cᵢ) по независимым источникам, не выше 0.98 (и не ниже лучшего члена). Применяется и в verify, и в `score_company` (пересчёт) | — |
 
 Отклонённое сохраняется (`RejectedEvidence`): это метрика галлюцинаций и материал для разбора FP.
 В UI отклонённое не показывается.
@@ -431,13 +436,15 @@ class ExtractionOutput(BaseModel):
 ```
 v_e   = strength_values[e.strength] × e.confidence × rel(e) × decay(e)
 rel(e)= reliability[e.source_type] (или reliability["headline_only"] при флаге headline_only)
-decay = 0.5 ** (age_days / half_life_days[source_type])      # None → 1.0; age от event_date, иначе published_at
-s_q   = 1 − Π_{e ∈ top3(q)} (1 − v_e)                         # noisy-OR
+decay = 0.5 ** (age_days / half_life_days[source_type])      # None → 1.0; age от event_date, иначе published_at,
+                                                              # без дат — max(возраст fetched_at, undated_age_days)
+s_q   = 1 − Π_{e ∈ top3 событий(q)} (1 − v_e)                 # noisy-OR; перепечатки одного события — один v_e (V5)
 points_q = weights[q.weight] × s_q
 Intent   = 100 × (1 − exp(−Σ_{q:+} points_q / tau_intent))
 Risk     = 100 × (1 − exp(−Σ_{q:−} points_q / tau_risk))
-Fit      = 0, если провален must-have; иначе 100 × Σ(вес совпавших nice-to-have) / Σ(весов)   (неизвестно → 0.5 веса + data_gap)
-           без nice-to-have → 100
+Fit      = 0, если провален must-have (outside_icp = true, в rule_hits флаг kind="icp");
+           иначе fit_floor + (100 − fit_floor) × Σ(вес совпавших nice-to-have) / Σ(весов)
+           (неизвестно → 0.5 веса + data_gap; без nice-to-have → 100; fit_floor = 20 — «в ICP, но без бонусов» ≠ «вне ICP»)
 Priority = 100 × (Fit/100)^fit_exponent × (Intent/100)^intent_exponent × (1 − risk_penalty × Risk/100)
 Правила: exclude → tier=disqualified, priority=0 · cap → priority=min(priority, cap_value) · flag → предупреждение
 Tier     = disqualified | hot (≥ tiers.hot) | warm (≥ tiers.warm) | cold
@@ -469,6 +476,14 @@ source, date, url)`. Плюс главный негатив, если Risk ≥ 2
   {"text": "Hiring 6 automation and AI engineers in Germany and Czechia.", "source_name": "Workday", "date": "2026-09-10"},
   {"text": "Risk: large in-house automation capability and third-party AI partners.", "polarity": "negative"}]}
 ```
+
+Производные NIS2 / DORA (AI-16) узел verify сохраняет вместе с извлечёнными через `AnalysisStore.save_extraction`
+(`source_type="derived"`, флаг `derived`, без документа) — id в breakdown указывают на сохранённые строки.
+`score_company` пересчитывает их по текущей фирмографике, переиспользуя сохранённые id; подпись производных
+сигналов входит в fingerprint, поэтому смена фирмографики не пропускается.
+
+Tier остаётся каноническим (`hot | warm | cold | disqualified`): отдельного значения «вне ICP» нет, статус —
+`LeadScore.outside_icp` и флаг в `rule_hits`.
 
 Обязательные тесты-свойства: больше силы или уверенности позитива → Priority не падает; негатив → не растёт;
 старее → вклад не растёт; Fit = 0 → Priority = 0; `exclude` → `disqualified`; пересчёт 1 000 компаний × 11 вопросов × 3
@@ -502,6 +517,17 @@ source, date, url)`. Плюс главный негатив, если Risk ≥ 2
 Затравка — `keywords_seed` из пресета. Модель `cheap`, результат кэшируется. Используется в префильтре (BM25, запрос)
 и в `CollectRequest` (`news_topics`, `job_keywords`).
 
+#### 1.7.7a Подсказка вопросов и классификация индустрии (AI-17, AI-18)
+
+- `suggest_questions(llm, service: ServiceBundle) -> QuestionSuggestions` (`suggest_questions@v1`, модель `cheap`):
+  8–12 черновиков `QuestionConfig` (≥ 2 негатива) с подписью для UI и 2 `RuleConfig` из описания услуги, value
+  proposition и ICP; существующие вопросы услуги не повторяются. Код отбрасывает неизвестные категории и источники,
+  дубли ключей и невалидные правила, ограничивает `recency_days` 30–730. Ничего не сохраняет: core отдаёт черновики
+  через `POST /api/v1/services/{id}/questions/suggest` (admin).
+- `classify_industry(llm, company, text, taxonomy: dict[id, label]) -> IndustryClassification` (`classify_industry@v1`,
+  `cheap`): до 3 id индустрий по тексту сайта (первые 6 000 символов). Таксономию передаёт core
+  (`parser.industry_taxonomy`), id вне таксономии отбрасываются кодом; без текста — без вызова LLM.
+
 #### 1.7.8 Evals (P19)
 
 - **Золотой набор** `evals/golden/mvp.jsonl`, одна строка — одно решение:
@@ -511,7 +537,13 @@ source, date, url)`. Плюс главный негатив, если Risk ≥ 2
   вендор (SAP / Celonis / UiPath), омоним (Orange SA против других «Orange»), компания без сигналов.
 - **Метрики:** на уровне решения по вопросу — TP / FP / FN / TN → precision, recall, F1 (всего и по категориям);
   доля галлюцинаций = `quote_not_found` / все evidence; доля воздержаний (`unclear`); вызовов LLM на компанию.
-- **Режимы:** `--cache-only` (без сети, на сохранённых документах и ответах — для CI) и `--live`.
+- **Разметка evidence:** у метки есть `polarity` и `evidence` — дословные цитаты из фикстуры: `accept` (подтверждают
+  «yes») и `reject` с причиной (`homonym`, `wrong_subject`, `vendor`, `not_an_attack`…). Сейчас: 100 меток по 5 компаниям
+  (DHL, Lufthansa, SAP — вендор, Orange — омоним, Deutsche Bahn), 68 цитат, из них 22 ловушки; фикстуры —
+  `tests/fixtures/*.jsonl` (`lr-parser collect`, 2026-09-25/26).
+- **Режимы:** `--cache-only` (без сети, на сохранённых документах и ответах — для CI), `--live` и `--oracle`
+  (офлайн: вместо модели — `GoldenOracleLLM`, «доверчивый» читатель размеченных цитат; меряет то, что решает код:
+  полноту префильтра и отсев ловушек верификатором). Тесты: `pytest -k golden`.
 - **Отчёт:** `evals/reports/<date>-<prompt_version>.md` + JSON. Precision по фидбеку пользователей считает core.
 
 ### 1.8 План работ P3 (часы от старта)

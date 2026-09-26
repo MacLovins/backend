@@ -59,6 +59,9 @@ class CompanyProfile(Contract):
     employees: int | None = Field(default=None, ge=0)
     revenue_eur: int | None = Field(default=None, ge=0)
     tags: list[str] = []
+    # other entities that contain the name ("Orange County" for Orange SA): a mention inside one of them is
+    # not the company (entity filter, verification V2)
+    homonyms: list[str] = []
 
 
 class QuestionConfig(Contract):
@@ -178,7 +181,9 @@ class ScoringProfile(Contract):
         "registry": None,
         "derived": None,
     }
-    tau_intent: float = Field(default=3.0, gt=0)
+    # 5, not 3: with τ = 3 two or three strong signals already saturate Intent, so changing a question
+    # weight (H → L) moved no tier on realistic data; τ = 5 keeps the curve responsive (test_scoring)
+    tau_intent: float = Field(default=5.0, gt=0)
     tau_risk: float = Field(default=2.0, gt=0)
     fit_exponent: float = Field(default=0.4, ge=0)
     intent_exponent: float = Field(default=0.6, ge=0)
@@ -186,6 +191,11 @@ class ScoringProfile(Contract):
     tiers: dict[str, float] = {"hot": 65, "warm": 40}
     min_confidence: float = Field(default=0.5, ge=0, le=1)
     max_evidence_per_question: int = Field(default=3, ge=1)
+    # Fit of a company that passes every must-have but matches no nice-to-have: the floor keeps it from
+    # looking like an outside-ICP company (Fit 0, Priority 0). Fit = floor + (100 − floor) × matched share.
+    fit_floor: float = Field(default=20.0, ge=0, lt=100)
+    # Undated evidence (no event date, no published date) is assumed at least this old for decay
+    undated_age_days: int = Field(default=90, ge=0)
 
     @model_validator(mode="after")
     def _complete_and_consistent(self) -> Self:
@@ -295,6 +305,7 @@ class VerifiedSignal(Contract):
     flags: set[SignalFlag] = set()
     model: str | None
     prompt_version: str | None
+    fetched_at: AwareDatetime | None = None  # of the source document: decay reference when undated
 
 
 class StoredSignal(VerifiedSignal):
@@ -346,6 +357,9 @@ class LeadScore(Contract):
     why_now: list[Reason]
     data_gaps: list[str]
     computed_at: AwareDatetime
+    # a must-have ICP criterion fails: Fit and Priority are 0; the tier stays "cold" (canonical enum) and
+    # rule_hits carries a kind="icp" flag naming the failed criteria
+    outside_icp: bool = False
 
 
 class FitResult(Contract):

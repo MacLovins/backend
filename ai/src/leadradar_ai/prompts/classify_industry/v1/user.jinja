@@ -1,0 +1,10 @@
+<industries>
+{% for id, label in industries.items() %}
+{{ id }}: {{ label }}
+{% endfor %}
+</industries>
+<company name="{{ company.name | attr }}" domain="{{ company.domain | attr }}"/>
+<website_text>
+{{ text }}
+</website_text>
+Classify the company following the rules. Return JSON only.

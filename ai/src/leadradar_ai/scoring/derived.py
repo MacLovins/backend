@@ -4,15 +4,25 @@
 (the NIS2 size-cap rule: medium and large enterprises). "In DORA scope": an EU financial entity.
 
 They attach to the service's question with category "compliance" (Cybersecurity: cy_compliance); services
-without such a question get none. They are computed from firmographics on every scoring — never stored —
-so a changed profile changes them on the next rescore. Weak/moderate by design: scope alone is context,
-explicit readiness programs found in documents must dominate.
+without such a question get none. The verify node persists them with the extracted signals
+(source_type="derived", flag "derived", no document) through AnalysisStore.save_extraction, so the ids in
+the breakdown resolve to stored rows. score_company still recomputes them from the current firmographics on
+every scoring (reusing the stored ids), so a changed profile changes them on the next rescore.
+Weak/moderate by design: scope alone is context, explicit readiness programs found in documents must
+dominate.
 """
 
 from datetime import datetime
 from uuid import NAMESPACE_URL, uuid5
 
-from leadradar_ai.contracts import CompanyProfile, QuestionConfig, ServiceBundle, StoredSignal, Strength
+from leadradar_ai.contracts import (
+    CompanyProfile,
+    QuestionConfig,
+    ServiceBundle,
+    StoredSignal,
+    Strength,
+    VerifiedSignal,
+)
 
 EU_COUNTRIES = frozenset(
     [
@@ -187,3 +197,16 @@ def derived_signals(company: CompanyProfile, bundle: ServiceBundle, now: datetim
             )
         )
     return out
+
+
+def derived_for_store(company: CompanyProfile, bundle: ServiceBundle, now: datetime) -> list[VerifiedSignal]:
+    """Derived signals as VerifiedSignal for AnalysisStore.save_extraction (the store assigns ids)."""
+    fields = set(VerifiedSignal.model_fields)
+    return [VerifiedSignal(**d.model_dump(include=fields)) for d in derived_signals(company, bundle, now)]
+
+
+def derived_fingerprint(company: CompanyProfile, bundle: ServiceBundle, now: datetime) -> str:
+    """Part of the extraction fingerprint: a firmographic change that changes derived signals re-saves them."""
+    return ";".join(
+        sorted(f"{d.source_name}|{d.strength}|{d.quote}" for d in derived_signals(company, bundle, now))
+    )

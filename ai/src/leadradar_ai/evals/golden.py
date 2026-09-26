@@ -2,7 +2,15 @@
 
 labels (JSONL), one decision per line:
     {"company_domain": "dhl.com", "service": "intelligent_automation", "question_key": "ia_ai_projects",
-     "expected": "yes", "evidence_hint": "agentic AI RFQ processing", "source_url": null, "source": "annex"}
+     "expected": "yes", "polarity": "positive", "evidence_hint": "agentic AI RFQ processing",
+     "source_url": null, "source": "fixture",
+     "evidence": [{"url": "https://…", "quote": "DHL Supply Chain Uses Agentic AI to Automate Operational Comms"},
+                  {"url": "https://…", "quote": "Orange County plans a moratorium on AI data centers",
+                   "expected": "reject", "reason": "wrong_subject"}]}
+
+evidence: labelled evidence items — verbatim quotes (title or text) of fixture documents. "accept" items
+support the expected "yes"; "reject" items are traps (homonyms, other companies, vendors) that must never
+become a signal. They drive the offline oracle eval (evals/oracle.py) and the evidence/trap metrics.
 
 companies (YAML): the profile of every labelled company and the parser fixture it is analysed on.
 Labels must be made against the documents in the fixture: a label for a fact the fixture does not contain
@@ -17,14 +25,23 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+class EvidenceLabel(BaseModel):
+    url: str
+    quote: str  # verbatim substring of the document's title or text
+    expected: Literal["accept", "reject"] = "accept"
+    reason: str | None = None  # why a "reject" item must not become a signal: wrong_subject, vendor, …
+
+
 class GoldenLabel(BaseModel):
     company_domain: str
     service: str
     question_key: str
     expected: Literal["yes", "no"]
+    polarity: Literal["positive", "negative"] | None = None
     evidence_hint: str | None = None
     source_url: str | None = None
     source: str | None = None  # where the label comes from: "annex", "fixture", "manual review"
+    evidence: list[EvidenceLabel] = Field(default_factory=list)
 
 
 class CompanyCase(BaseModel):
@@ -37,6 +54,7 @@ class CompanyCase(BaseModel):
     industries: list[str] = Field(default_factory=list)
     employees: int | None = None
     tags: list[str] = Field(default_factory=list)
+    homonyms: list[str] = Field(default_factory=list)  # other entities with the same name (entity filter)
     note: str | None = None
 
 

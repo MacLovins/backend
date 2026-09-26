@@ -224,7 +224,8 @@ def signal_row(
         question_id=signal.question_id,
         question_key=signal.question_key,
         question_version=signal.question_version,
-        document_id=signal.document_id,
+        # derived NIS2/DORA signals have no source document (their document_id is synthetic)
+        document_id=None if signal.source_type == "derived" else signal.document_id,
         chunk_id=signal.chunk_id,
         category=signal.category,
         polarity=signal.polarity,

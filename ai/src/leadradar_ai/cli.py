@@ -3,7 +3,9 @@
     lr-ai presets [intelligent_automation]
     lr-ai analyze --fixture tests/fixtures/dhl.jsonl --domain dhl.com --name "DHL Group" --live
     lr-ai expand --preset intelligent_automation --question ia_hiring --live
+    lr-ai suggest --preset cybersecurity --live           # draft questions and rules (nothing saved)
     lr-ai eval --fixtures-dir tests/fixtures            # cache-only: offline, for CI
+    lr-ai eval --oracle --fake-embeddings --now 2026-09-26   # pipeline check with the golden-label oracle
 
 Without --live nothing goes to the network: answers come from the local LLM cache (.cache/lr-ai/llm),
 and an uncached prompt fails that service with a hint. A repeated --live run costs 0 LLM calls.
@@ -19,10 +21,17 @@ from uuid import NAMESPACE_URL, uuid5
 
 import typer
 
-from leadradar_ai.config_assist import expand_question, languages_for_icp
+from leadradar_ai.config_assist import expand_question, languages_for_icp, suggest_questions
 from leadradar_ai.contracts import AnalysisInput, CompanyProfile, LeadScore, ProgressEvent, ServiceBundle
 from leadradar_ai.errors import AnalysisPaused
-from leadradar_ai.evals import default_golden_dir, load_companies, load_labels, run_eval, write_report
+from leadradar_ai.evals import (
+    GoldenOracleLLM,
+    default_golden_dir,
+    load_companies,
+    load_labels,
+    run_eval,
+    write_report,
+)
 from leadradar_ai.llm.gemini import GeminiClient
 from leadradar_ai.llm.types import LLMClient
 from leadradar_ai.local import CacheOnlyTransport, FileLLMCache, FileUsageSink, load_parser_jsonl
@@ -268,6 +277,19 @@ def expand(
     typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
 
 
+@app.command()
+def suggest(
+    preset: Annotated[str, typer.Option(help="Preset whose service description and ICP to use")],
+    live: Annotated[bool, typer.Option(help="Call Gemini for uncached prompts")] = False,
+    cache_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE,
+) -> None:
+    """Draft signal questions and disqualification rules for a service (AI-17); prints JSON."""
+    bundle = load_preset(preset).to_bundle()
+    llm, _ = make_llm(live, cache_dir)
+    result = asyncio.run(suggest_questions(llm, bundle))
+    typer.echo(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
 # --- eval ---------------------------------------------------------------------------------------
 
 
@@ -288,13 +310,16 @@ def eval_command(
     out_dir: Annotated[Path, typer.Option(help="Where to write the report")] = Path("evals/reports"),
     cache_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE,
     fail_under: Annotated[float | None, typer.Option(help="Exit 1 if precision is below this")] = None,
+    oracle: Annotated[
+        bool, typer.Option(help="Answer with the golden-label oracle instead of the LLM (offline)")
+    ] = False,
 ) -> None:
     """Measure precision / recall on the golden set and write a Markdown + JSON report."""
     golden_dir = default_golden_dir()
     labels = load_labels(golden or golden_dir / "mvp.jsonl")
     cases = load_companies(companies or golden_dir / "companies.yaml")
     reference = datetime.fromisoformat(now).replace(tzinfo=UTC) if now else datetime.now(UTC)
-    llm, _ = make_llm(live, cache_dir)
+    llm = GoldenOracleLLM(labels, cases) if oracle else make_llm(live, cache_dir)[0]
     result = asyncio.run(
         run_eval(
             labels,
@@ -303,7 +328,7 @@ def eval_command(
             llm,
             make_embedder(fake_embeddings),
             reference,
-            mode="live" if live else "cache-only",
+            mode="oracle" if oracle else "live" if live else "cache-only",
             prefilter=PrefilterConfig.from_settings(AISettings()),
             max_input_tokens=LLMSettings().max_input_tokens,
         )
@@ -314,6 +339,11 @@ def eval_command(
         f"precision {m.overall['precision']} · recall {m.overall['recall']} · evaluated {m.evaluated}/"
         f"{len(result.decisions)} · hallucinated quotes {m.hallucination_rate} · LLM calls {m.llm_calls}"
     )
+    if result.evidence:
+        ev = result.evidence_summary
+        typer.echo(
+            f"evidence verified {ev['accept_verified']}/{ev['accept']} · traps leaked {ev['traps_leaked']}/{ev['traps']}"
+        )
     for note in result.notes:
         typer.echo(f"note: {note}")
     typer.echo(f"report: {md}\n        {js}")
