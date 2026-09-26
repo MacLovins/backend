@@ -281,3 +281,13 @@ async def test_outreach_is_enqueued_and_generated_by_the_worker(org_id, fake_wor
     assert client.get(f"/api/v1/leads/{company_id}/outreach/{uuid4()}", headers=h).status_code == 404
     assert client.get(f"/api/v1/leads/{uuid4()}/outreach/{job['id']}", headers=h).status_code == 404
     assert client.post(f"/api/v1/leads/{uuid4()}/outreach", json={}, headers=h).status_code == 404
+
+
+async def test_outreach_is_rejected_when_the_feature_is_off(org_id, client, monkeypatch):
+    _, company_id = await seed(org_id)
+    await engine.dispose()
+    monkeypatch.setattr(settings, "FEATURE_OUTREACH", False)
+    res = client.post(
+        f"/api/v1/leads/{company_id}/outreach", json={"tone": "direct"}, headers=headers(org_id)
+    )
+    assert res.status_code == 503, res.text
