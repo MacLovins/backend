@@ -19,6 +19,11 @@ class AppSettings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     WORKER_MAX_ASYNC_TASKS: int = 3
+    # LangGraph checkpoints (psycopg URL, schema langgraph). Empty: derived from DATABASE_URL.
+    LANGGRAPH_DB_URL: str = ""
+    # Hard limits around parser calls: resolve can hang on bot-protected sites
+    ANALYSIS_RESOLVE_TIMEOUT_S: float = 60
+    ANALYSIS_COLLECT_BUDGET_S: int = 90
     REFRESH_CRON: str = "0 */6 * * *"
 
     # Feature flags

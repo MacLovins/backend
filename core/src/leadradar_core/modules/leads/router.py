@@ -275,10 +275,13 @@ async def get_lead_detail(
             grouped_questions[q.id] = (q, [])
         grouped_questions[q.id][1].append(sig)
 
+    # strength and points of each question as computed by the scoring engine (score.breakdown)
+    contributions = {
+        c.get("question_id"): c for c in ((score.breakdown or []) if score else []) if isinstance(c, dict)
+    }
     signals_by_question: list[QuestionSignals] = []
     for _qid, (q, sig_list) in grouped_questions.items():
-        # Calculate points based on weight
-        weight_points = 3.0 if q.weight == "high" else (2.0 if q.weight == "medium" else 1.0)
+        contribution = contributions.get(str(q.id), {})
         signals_by_question.append(
             QuestionSignals(
                 question={
@@ -289,8 +292,8 @@ async def get_lead_detail(
                     "polarity": q.polarity,
                     "weight": q.weight,
                 },
-                strength=0.85,
-                points=weight_points,
+                strength=float(contribution.get("strength", 0.0)),
+                points=float(contribution.get("points", 0.0)),
                 signals=[
                     SignalItem(
                         id=s.id,

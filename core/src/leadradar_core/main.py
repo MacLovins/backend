@@ -32,7 +32,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as e:
             logger.warning("redis_connect_failed_on_startup", error=str(e))
 
+        from leadradar_core.worker.broker import broker
+
+        await broker.startup()  # the API only enqueues tasks; the worker process executes them
+        app.state.broker = broker
+
     yield
+
+    if getattr(app.state, "broker", None):
+        await app.state.broker.shutdown()
 
     if getattr(app.state, "redis", None):
         try:

@@ -110,7 +110,7 @@ uv sync --all-packages                                   # установить 
 docker compose up -d postgres redis                      # инфраструктура для разработки
 uv run --package leadradar-core alembic -c core/alembic.ini upgrade head
 uv run --package leadradar-core uvicorn leadradar_core.main:app --reload
-uv run --package leadradar-core taskiq worker leadradar_core.worker.broker:broker --max-async-tasks 3
+uv run --package leadradar-core taskiq worker leadradar_core.worker.broker:broker --workers 1 --max-async-tasks 3
 uv run pytest                                            # все тесты (без сети)
 uv run lint-imports && uv run ruff check . && uv run ruff format --check .
 ```
