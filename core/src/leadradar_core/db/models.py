@@ -20,6 +20,7 @@ from leadradar_core.modules.intelligence.models import (
 )
 from leadradar_core.modules.leads.models import LeadScore
 from leadradar_core.modules.meta.models import LLMCache, LLMCall
+from leadradar_core.modules.outreach.models import OutreachJob
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
 
 __all__ = [
@@ -37,6 +38,7 @@ __all__ = [
     "LLMCall",
     "LeadScore",
     "Org",
+    "OutreachJob",
     "RejectedEvidence",
     "RunEvent",
     "ScoringProfile",

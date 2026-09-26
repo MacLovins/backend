@@ -37,4 +37,4 @@ async def _shutdown(state: TaskiqState) -> None:
 
 
 # register tasks on the broker (the worker CLI imports only this module)
-from leadradar_core.worker import tasks  # noqa: E402, F401
+from leadradar_core.worker import outreach, tasks  # noqa: E402, F401
