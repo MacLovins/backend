@@ -135,7 +135,7 @@ async def test_outbox_rescore_tier_change_and_feedback(org_id, fake_worker, fake
     fb = client.post(
         f"/api/v1/leads/{company_id}/feedback",
         headers=headers(org_id),
-        json={"verdict": "correct", "service_id": str(service_id), "reason": "met them"},
+        json={"verdict": "good_fit", "service_id": str(service_id), "reason": "met them"},
     )
     assert fb.status_code == 201, fb.text
 
