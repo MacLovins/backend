@@ -78,6 +78,13 @@ services:
     volumes:
       - worker-cache:/app/.cache
 
+  # periodic tasks (refresh_tracked, resume_paused, dispatch_events) are only enqueued here; the worker runs them
+  scheduler:
+    <<: *app
+    container_name: leadradar-scheduler
+    restart: unless-stopped
+    command: ["taskiq", "scheduler", "leadradar_core.worker.broker:scheduler"]
+
   # --- одноразовые команды: docker compose run --rm <service> ---
   migrate:
     <<: *app

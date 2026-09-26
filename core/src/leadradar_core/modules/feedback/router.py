@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
 from leadradar_core.db.session import get_db_session
+from leadradar_core.modules.activity import events as domain_events
 from leadradar_core.modules.feedback.models import Feedback
 from leadradar_core.modules.feedback.schemas import FeedbackIn, FeedbackOut, QualityMetricsOut
 from leadradar_core.modules.intelligence.models import RejectedEvidence, Signal
@@ -35,6 +36,7 @@ async def feedback_signal(
         reason=fb_in.reason,
     )
     session.add(fb)
+    domain_events.feedback_created(session, fb)
 
     # When user marks signal as wrong, change status so it drops out of scoring
     if fb_in.verdict == "wrong":
@@ -68,6 +70,7 @@ async def feedback_lead(
         reason=fb_in.reason,
     )
     session.add(fb)
+    domain_events.feedback_created(session, fb)
     await session.commit()
     await session.refresh(fb)
     return FeedbackOut.model_validate(fb)

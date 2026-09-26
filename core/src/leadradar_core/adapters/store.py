@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from leadradar_core.adapters import mapping
+from leadradar_core.modules.activity import events as domain_events
 from leadradar_core.modules.intelligence.models import (
     Document,
     DocumentChunk,
@@ -119,9 +120,9 @@ class SqlAnalysisStore:
                 )
                 .values(status="superseded")
             )
-            session.add_all(
-                mapping.signal_row(s, company_id, service_id, self._org_id, run_id) for s in signals
-            )
+            rows = [mapping.signal_row(s, company_id, service_id, self._org_id, run_id) for s in signals]
+            session.add_all(rows)
+            await domain_events.signals_detected(session, rows)
             session.add_all(
                 RejectedEvidence(
                     org_id=self._org_id,
@@ -172,6 +173,9 @@ class SqlAnalysisStore:
             previous = (await session.execute(select(LeadScore).where(current))).scalars().first()
             await session.execute(update(LeadScore).where(current).values(is_current=False))
             session.add(mapping.lead_score_row(score, self._org_id))
+            await domain_events.lead_tier_changed(
+                session, self._org_id, score, previous.tier if previous else None
+            )
         return ai.ScoreChange(
             company_id=score.company_id,
             service_id=score.service_id,
