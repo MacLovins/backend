@@ -3467,8 +3467,8 @@
         "tags": [
           "alerts"
         ],
-        "summary": "List Rules",
-        "operationId": "list_rules_api_v1_alerts_rules_get",
+        "summary": "List Alert Rules",
+        "operationId": "list_alert_rules_api_v1_alerts_rules_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3479,7 +3479,7 @@
                     "$ref": "#/components/schemas/AlertRuleOut"
                   },
                   "type": "array",
-                  "title": "Response List Rules Api V1 Alerts Rules Get"
+                  "title": "Response List Alert Rules Api V1 Alerts Rules Get"
                 }
               }
             }
@@ -3505,8 +3505,8 @@
         "tags": [
           "alerts"
         ],
-        "summary": "Create Rule",
-        "operationId": "create_rule_api_v1_alerts_rules_post",
+        "summary": "Create Alert Rule",
+        "operationId": "create_alert_rule_api_v1_alerts_rules_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3551,9 +3551,9 @@
         "tags": [
           "alerts"
         ],
-        "summary": "Preview",
+        "summary": "Preview Alert Rule",
         "description": "How often the rule would have fired over the last 30 days, with the first notifications rendered.",
-        "operationId": "preview_api_v1_alerts_rules_preview_post",
+        "operationId": "preview_alert_rule_api_v1_alerts_rules_preview_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3598,8 +3598,8 @@
         "tags": [
           "alerts"
         ],
-        "summary": "Update Rule",
-        "operationId": "update_rule_api_v1_alerts_rules__rule_id__patch",
+        "summary": "Update Alert Rule",
+        "operationId": "update_alert_rule_api_v1_alerts_rules__rule_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -3654,8 +3654,8 @@
         "tags": [
           "alerts"
         ],
-        "summary": "Delete Rule",
-        "operationId": "delete_rule_api_v1_alerts_rules__rule_id__delete",
+        "summary": "Delete Alert Rule",
+        "operationId": "delete_alert_rule_api_v1_alerts_rules__rule_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -3879,9 +3879,9 @@
         "tags": [
           "alerts"
         ],
-        "summary": "Watch",
+        "summary": "Watch Company Endpoint",
         "description": "Creates or re-activates the \"<company> \u2014 any signal\" rule (in-app and e-mail).",
-        "operationId": "watch_api_v1_companies__id__watch_post",
+        "operationId": "watch_company_endpoint_api_v1_companies__id__watch_post",
         "security": [
           {
             "HTTPBearer": []
@@ -3926,8 +3926,8 @@
         "tags": [
           "alerts"
         ],
-        "summary": "Unwatch",
-        "operationId": "unwatch_api_v1_companies__id__watch_delete",
+        "summary": "Unwatch Company Endpoint",
+        "operationId": "unwatch_company_endpoint_api_v1_companies__id__watch_delete",
         "security": [
           {
             "HTTPBearer": []

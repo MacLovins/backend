@@ -43,7 +43,7 @@ async def _own_rule(session: AsyncSession, principal: Principal, rule_id: UUID) 
 
 
 @router.get("/alerts/rules", response_model=list[AlertRuleOut])
-async def list_rules(
+async def list_alert_rules(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[AlertRuleOut]:
@@ -58,7 +58,7 @@ async def list_rules(
 
 
 @router.post("/alerts/rules", response_model=AlertRuleOut, status_code=status.HTTP_201_CREATED)
-async def create_rule(
+async def create_alert_rule(
     body: AlertRuleIn,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -71,7 +71,7 @@ async def create_rule(
 
 
 @router.post("/alerts/rules/preview", response_model=RulePreviewOut)
-async def preview(
+async def preview_alert_rule(
     body: AlertRuleIn,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -81,7 +81,7 @@ async def preview(
 
 
 @router.patch("/alerts/rules/{rule_id}", response_model=AlertRuleOut)
-async def update_rule(
+async def update_alert_rule(
     rule_id: UUID,
     body: AlertRuleUpdate,
     principal: Annotated[Principal, Depends(get_current_principal)],
@@ -97,7 +97,7 @@ async def update_rule(
 
 
 @router.delete("/alerts/rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_rule(
+async def delete_alert_rule(
     rule_id: UUID,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -188,7 +188,7 @@ async def _company(session: AsyncSession, principal: Principal, company_id: UUID
 
 
 @router.post("/companies/{id}/watch", response_model=AlertRuleOut)
-async def watch(
+async def watch_company_endpoint(
     id: UUID,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
@@ -202,7 +202,7 @@ async def watch(
 
 
 @router.delete("/companies/{id}/watch", status_code=status.HTTP_204_NO_CONTENT)
-async def unwatch(
+async def unwatch_company_endpoint(
     id: UUID,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
