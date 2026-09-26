@@ -68,6 +68,26 @@ def company_ref(company: Company) -> parser.CompanyRef:
     )
 
 
+def firmographics(company: Company) -> parser.Firmographics | None:
+    """Stored firmographics for collection, so adapters reuse the LEI / QID / Crunchbase id instead of
+    searching again (the GLEIF, Wikidata and Crunchbase adapters)."""
+    if not any(
+        (company.wikidata_qid, company.lei, company.crunchbase_id, company.employees, company.country_code)
+    ):
+        return None
+    return parser.Firmographics(
+        country_code=company.country_code,
+        hq_city=company.hq_city,
+        industry_ids=list(company.industry_ids or []),
+        employees=company.employees,
+        revenue_eur=_int(company.revenue_eur),
+        lei=company.lei,
+        wikidata_qid=company.wikidata_qid,
+        crunchbase_id=company.crunchbase_id,
+        source="core",
+    )
+
+
 def apply_resolved(company: Company, resolved: parser.ResolvedCompany) -> None:
     """Fill what the resolver found; manual data always wins."""
     company.homepage_url = company.homepage_url or resolved.homepage_url

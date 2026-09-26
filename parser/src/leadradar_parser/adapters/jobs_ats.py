@@ -11,9 +11,13 @@ from ..http import HttpClient
 from ..normalize import MAX_JOB_CHARS
 from .common import make_document
 
-SUPPORTED_ATS = {"greenhouse", "lever", "workday", "personio"}
+# Every AtsKind has a collector; careers_html runs only when no ATS (or an unknown one) was detected.
+SUPPORTED_ATS = {
+    "greenhouse", "lever", "workday", "personio", "ashby", "smartrecruiters", "workable", "recruitee",
+}  # fmt: skip
 WORKDAY_MAX_SEARCHES = 5
 WORKDAY_MAX_DETAILS = 30
+SMARTRECRUITERS_MAX_DETAILS = 20
 
 
 class JobsAtsAdapter:
@@ -32,6 +36,10 @@ class JobsAtsAdapter:
             "lever": self._lever,
             "workday": self._workday,
             "personio": self._personio,
+            "ashby": self._ashby,
+            "smartrecruiters": self._smartrecruiters,
+            "workable": self._workable,
+            "recruitee": self._recruitee,
         }
         handler = handlers.get(company.ats.kind)
         if handler is None:
@@ -166,6 +174,166 @@ class JobsAtsAdapter:
                 },
                 max_chars=MAX_JOB_CHARS,
             )
+
+    async def _ashby(
+        self, company: ResolvedCompany, plan: CollectPlan, http: HttpClient
+    ) -> AsyncIterator[Document]:
+        assert company.ats is not None
+        url = f"https://api.ashbyhq.com/posting-api/job-board/{company.ats.token}"
+        response = await http.get(url, check_robots=False)
+        jobs = [
+            job
+            for job in _json_object(response.json(), "ashby").get("jobs") or []
+            if job.get("isListed", True)
+        ]
+        for job in _prioritize(jobs, plan.job_keywords, "title"):
+            title = str(job.get("title") or "").strip()
+            body = str(job.get("descriptionPlain") or "") or _plain_html(
+                str(job.get("descriptionHtml") or "")
+            )
+            yield make_document(
+                source_type="jobs",
+                source_name="ashby",
+                url=str(job.get("jobUrl") or f"https://jobs.ashbyhq.com/{company.ats.token}"),
+                title=title,
+                text=f"{title}\n{body}",
+                published_at=job.get("publishedAt"),
+                meta={
+                    "location": job.get("location"),
+                    "department": job.get("department") or job.get("team"),
+                    "employment_type": job.get("employmentType"),
+                    "ats": "ashby",
+                },
+                max_chars=MAX_JOB_CHARS,
+            )
+
+    async def _smartrecruiters(
+        self, company: ResolvedCompany, plan: CollectPlan, http: HttpClient
+    ) -> AsyncIterator[Document]:
+        assert company.ats is not None
+        base = f"https://api.smartrecruiters.com/v1/companies/{company.ats.token}/postings"
+        response = await http.get(base, check_robots=False, params={"limit": 100})
+        postings = _json_object(response.json(), "smartrecruiters").get("content") or []
+        for index, posting in enumerate(_prioritize(postings, plan.job_keywords, "name")):
+            posting_id = str(posting.get("id") or "")
+            title = str(posting.get("name") or "").strip()
+            if not posting_id or not title:
+                continue
+            body = ""
+            url = f"https://jobs.smartrecruiters.com/{company.ats.token}/{posting_id}"
+            # The list has no descriptions: fetch details for the first (keyword-matching) postings only.
+            if index < SMARTRECRUITERS_MAX_DETAILS:
+                try:
+                    detail = _json_object(
+                        (await http.get(f"{base}/{posting_id}", check_robots=False)).json(), "smartrecruiters"
+                    )
+                except ParserError:
+                    detail = {}
+                sections = (detail.get("jobAd") or {}).get("sections") or {}
+                body = "\n".join(
+                    _plain_html(str((sections.get(key) or {}).get("text") or ""))
+                    for key in ("jobDescription", "qualifications", "additionalInformation")
+                ).strip()
+                url = str(detail.get("postingUrl") or url)
+            location = posting.get("location") or {}
+            yield make_document(
+                source_type="jobs",
+                source_name="smartrecruiters",
+                url=url,
+                title=title,
+                text=f"{title}\n{body}",
+                published_at=posting.get("releasedDate"),
+                meta={
+                    "location": location.get("fullLocation") or location.get("city"),
+                    "department": (posting.get("department") or {}).get("label")
+                    or (posting.get("function") or {}).get("label"),
+                    "employment_type": (posting.get("typeOfEmployment") or {}).get("label"),
+                    "headline_only": not body,
+                    "ats": "smartrecruiters",
+                },
+                max_chars=MAX_JOB_CHARS,
+            )
+
+    async def _workable(
+        self, company: ResolvedCompany, plan: CollectPlan, http: HttpClient
+    ) -> AsyncIterator[Document]:
+        assert company.ats is not None
+        url = f"https://apply.workable.com/api/v1/widget/accounts/{company.ats.token}"
+        response = await http.get(url, check_robots=False, params={"details": "true"})
+        jobs = _json_object(response.json(), "workable").get("jobs") or []
+        for job in _prioritize(jobs, plan.job_keywords, "title"):
+            title = str(job.get("title") or "").strip()
+            location = ", ".join(str(job[key]) for key in ("city", "country") if job.get(key))
+            yield make_document(
+                source_type="jobs",
+                source_name="workable",
+                url=str(
+                    job.get("url")
+                    or job.get("shortlink")
+                    or f"https://apply.workable.com/{company.ats.token}"
+                ),
+                title=title,
+                text=f"{title}\n{_plain_html(str(job.get('description') or ''))}",
+                published_at=job.get("published_on") or job.get("created_at"),
+                meta={
+                    "location": location or None,
+                    "department": job.get("department") or job.get("function"),
+                    "employment_type": job.get("employment_type"),
+                    "ats": "workable",
+                },
+                max_chars=MAX_JOB_CHARS,
+            )
+
+    async def _recruitee(
+        self, company: ResolvedCompany, plan: CollectPlan, http: HttpClient
+    ) -> AsyncIterator[Document]:
+        assert company.ats is not None
+        host = company.ats.host or f"{company.ats.token}.recruitee.com"
+        response = await http.get(f"https://{host}/api/offers/", check_robots=False)
+        offers = [
+            offer
+            for offer in _json_object(response.json(), "recruitee").get("offers") or []
+            if offer.get("status", "published") == "published"
+        ]
+        for offer in _prioritize(offers, plan.job_keywords, "title"):
+            title = str(offer.get("title") or "").strip()
+            body = "\n".join(
+                _plain_html(str(offer.get(key) or "")) for key in ("description", "requirements")
+            ).strip()
+            yield make_document(
+                source_type="jobs",
+                source_name="recruitee",
+                url=str(offer.get("careers_url") or f"https://{host}/o/{offer.get('slug') or ''}"),
+                title=title,
+                text=f"{title}\n{body}",
+                # "2026-09-25 15:46:07 UTC" is neither ISO 8601 nor RFC 2822.
+                published_at=_strip_utc(offer.get("published_at") or offer.get("created_at")),
+                meta={
+                    "location": offer.get("location"),
+                    "department": offer.get("department"),
+                    "employment_type": offer.get("employment_type_code"),
+                    "ats": "recruitee",
+                },
+                max_chars=MAX_JOB_CHARS,
+            )
+
+
+def _prioritize(jobs: list[Any], keywords: list[str], title_key: str) -> list[dict[str, Any]]:
+    """Jobs whose title mentions a plan keyword first (stable), so `max_items_per_source` keeps them."""
+    lowered = [keyword.casefold() for keyword in keywords if keyword.strip()]
+    valid = [job for job in jobs if isinstance(job, dict)]
+    if not lowered:
+        return valid
+    return sorted(
+        valid, key=lambda job: not any(k in str(job.get(title_key) or "").casefold() for k in lowered)
+    )
+
+
+def _strip_utc(value: object) -> str | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    return f"{text.removesuffix(' UTC')}+00:00" if text.endswith(" UTC") else text
 
 
 def _plain_html(value: str) -> str:

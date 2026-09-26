@@ -1,0 +1,43 @@
+{
+ "offset": 0,
+ "limit": 100,
+ "totalFound": 2,
+ "content": [
+  {
+   "id": "744000151928744",
+   "name": "Design Engineer",
+   "releasedDate": "2026-09-25T20:04:47.428Z",
+   "location": {
+    "city": "Stuttgart",
+    "country": "de",
+    "fullLocation": "Stuttgart, Germany"
+   },
+   "department": {},
+   "function": {
+    "id": "engineering",
+    "label": "Engineering"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "ref": "https://api.smartrecruiters.com/v1/companies/ExampleGroup/postings/744000151928744"
+  },
+  {
+   "id": "744000151900001",
+   "name": "RPA Automation Developer",
+   "releasedDate": "2026-09-21T10:00:00.000Z",
+   "location": {
+    "city": "Munich",
+    "country": "de",
+    "fullLocation": "Munich, Germany"
+   },
+   "department": {
+    "label": "IT"
+   },
+   "typeOfEmployment": {
+    "label": "Full-time"
+   }
+  }
+ ]
+}

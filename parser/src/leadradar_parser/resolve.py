@@ -6,8 +6,9 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from lxml import etree, html
 
-from .contracts import AtsRef, CompanyRef, ResolvedCompany
+from .contracts import AtsRef, CompanyRef, Firmographics, ResolvedCompany
 from .errors import ParserError
+from .gleif import firmographics_from, lei_record, search_lei
 from .http import HttpClient, create_http_client, is_blocked_host
 from .normalize import canonicalize_url
 from .taxonomy import load_data
@@ -71,11 +72,16 @@ async def _resolve(ref: CompanyRef, http: HttpClient) -> ResolvedCompany:
 
     try:
         firmographics = await resolve_firmographics(ref, http)
-    except (ParserError, httpx.HTTPError, ValueError):
+    except (ParserError, httpx.HTTPError, ValueError, KeyError, TypeError):
         firmographics = None
         notes.append("wikidata unavailable")
     if firmographics is None and "wikidata unavailable" not in notes:
         notes.append("wikidata entity not found")
+    if "gleif" in http.settings.adapters:
+        try:
+            firmographics = await _complete_with_gleif(ref, firmographics, http, notes)
+        except (ParserError, httpx.HTTPError, ValueError, KeyError, TypeError):
+            notes.append("gleif unavailable")
     return ResolvedCompany(
         **ref.model_dump(exclude={"careers_url", "newsroom_url", "ats", "country_code", "wikidata_qid"}),
         country_code=ref.country_code or (firmographics.country_code if firmographics else None),
@@ -88,6 +94,36 @@ async def _resolve(ref: CompanyRef, http: HttpClient) -> ResolvedCompany:
         firmographics=firmographics,
         resolved_at=datetime.now(UTC),
         notes=notes,
+    )
+
+
+async def _complete_with_gleif(
+    ref: CompanyRef, firmographics: Firmographics | None, http: HttpClient, notes: list[str]
+) -> Firmographics | None:
+    """Fill LEI / legal name from GLEIF when Wikidata lacks them (no request when Wikidata has the LEI)."""
+    if firmographics is not None and firmographics.lei and firmographics.legal_name:
+        return firmographics
+    record = None
+    if firmographics is not None and firmographics.lei:
+        record = await lei_record(firmographics.lei, http)
+    else:
+        legal_name = firmographics.legal_name if firmographics else None
+        names = [name for name in (legal_name, ref.name, *ref.aliases) if name]
+        country = ref.country_code or (firmographics.country_code if firmographics else None)
+        record = await search_lei(ref.model_copy(update={"country_code": country}), http, names)
+    if record is None:
+        return firmographics
+    notes.append(f"GLEIF: {record.lei}")
+    if firmographics is None:
+        return firmographics_from(record)
+    return firmographics.model_copy(
+        update={
+            "lei": firmographics.lei or record.lei,
+            "legal_name": firmographics.legal_name or record.legal_name,
+            "country_code": firmographics.country_code or record.country_code,
+            "hq_city": firmographics.hq_city or record.city,
+            "source": f"{firmographics.source}+gleif",
+        }
     )
 
 

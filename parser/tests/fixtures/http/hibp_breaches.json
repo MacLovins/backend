@@ -1,0 +1,64 @@
+[
+ {
+  "Name": "ExampleAG",
+  "Title": "Example AG",
+  "Domain": "shop.example.com",
+  "BreachDate": "2026-08-30",
+  "AddedDate": "2026-09-12T02:14:00Z",
+  "ModifiedDate": "2026-09-12T02:14:00Z",
+  "PwnCount": 1250000,
+  "Description": "In September 2026, <a href=\"https://example.org/story\" target=\"_blank\">Example AG suffered a data breach</a> that exposed customer records.",
+  "DataClasses": [
+   "Email addresses",
+   "Names",
+   "Passwords"
+  ],
+  "IsVerified": true,
+  "IsFabricated": false,
+  "IsSensitive": false,
+  "IsRetired": false,
+  "IsSpamList": false,
+  "IsMalware": false
+ },
+ {
+  "Name": "ExampleOld",
+  "Title": "Example AG (2015)",
+  "Domain": "example.com",
+  "BreachDate": "2015-03-01",
+  "AddedDate": "2015-10-26T23:35:45Z",
+  "PwnCount": 100,
+  "Description": "An old breach.",
+  "DataClasses": [
+   "Email addresses"
+  ],
+  "IsVerified": true,
+  "IsFabricated": false,
+  "IsSpamList": false
+ },
+ {
+  "Name": "NotExample",
+  "Title": "Not Example",
+  "Domain": "notexample.com",
+  "BreachDate": "2026-09-01",
+  "AddedDate": "2026-09-15T00:00:00Z",
+  "PwnCount": 5,
+  "Description": "Someone else.",
+  "DataClasses": [],
+  "IsVerified": true,
+  "IsFabricated": false,
+  "IsSpamList": false
+ },
+ {
+  "Name": "AtsHost",
+  "Title": "ATS host",
+  "Domain": "jobs.lever.co",
+  "BreachDate": "2026-09-02",
+  "AddedDate": "2026-09-16T00:00:00Z",
+  "PwnCount": 7,
+  "Description": "The ATS vendor, not the company.",
+  "DataClasses": [],
+  "IsVerified": true,
+  "IsFabricated": false,
+  "IsSpamList": false
+ }
+]

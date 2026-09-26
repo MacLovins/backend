@@ -2,6 +2,7 @@ import re
 import zlib
 from collections import deque
 from collections.abc import AsyncIterator, Iterable
+from contextlib import aclosing
 from datetime import datetime
 from functools import lru_cache
 from urllib.parse import urljoin, urlsplit
@@ -114,40 +115,13 @@ class WebsiteAdapter:
         if company.newsroom_url and _is_own(company.newsroom_url, roots):
             candidates[canonicalize_url(company.newsroom_url)] = None
 
-        # The company domain first: homepages often geo-redirect to a regional or product site.
-        sitemaps: list[str] = []
-        for origin in dict.fromkeys((f"https://{company.domain}/", homepage)):
-            try:
-                sitemaps += [url for url in await http.robots_sitemaps(origin) if _is_own(url, roots)]
-            except ParserError:
-                continue
-        sitemaps = list(dict.fromkeys(sitemaps))
-        if not sitemaps:
-            sitemaps = [urljoin(homepage, "/sitemap.xml"), urljoin(homepage, "/sitemap_index.xml")]
-
-        visited: set[str] = set()
-        while sitemaps and len(visited) < MAX_SITEMAPS and len(candidates) < MAX_SITEMAP_URLS:
-            sitemap_url = sitemaps.pop(0)
-            if sitemap_url in visited:
-                continue
-            visited.add(sitemap_url)
-            try:
-                response = await http.get(sitemap_url)
-                root = _parse_xml(response.content)
-            except (ParserError, etree.XMLSyntaxError, zlib.error):
-                continue
-            for node in root.xpath("//*[local-name()='url']"):
-                locations = node.xpath("./*[local-name()='loc']/text()")
-                if not locations or not _is_candidate(str(locations[0]).strip(), roots):
+        async with aclosing(sitemap_entries(company, http, roots)) as entries:
+            async for location, lastmod in entries:
+                if not _is_candidate(location, roots):
                     continue
-                modified = node.xpath("./*[local-name()='lastmod']/text()")
-                candidates[canonicalize_url(str(locations[0]).strip())] = utc_datetime(
-                    str(modified[0]) if modified else None
-                )
+                candidates[canonicalize_url(location)] = lastmod
                 if len(candidates) >= MAX_SITEMAP_URLS:
                     break
-            for location in root.xpath("//*[local-name()='sitemap']/*[local-name()='loc']/text()"):
-                sitemaps.append(str(location).strip())
 
         try:
             homepage_response = await http.get(homepage)
@@ -159,6 +133,49 @@ class WebsiteAdapter:
         except (ParserError, etree.ParserError, ValueError):
             pass
         return candidates
+
+
+async def sitemap_entries(
+    company: ResolvedCompany, http: HttpClient, roots: set[str]
+) -> AsyncIterator[tuple[str, datetime | None]]:
+    """(loc, lastmod) of every own-site URL in the company sitemaps: robots.txt `Sitemap:` first, else the
+    default paths; ≤ MAX_SITEMAPS files and ≤ MAX_SITEMAP_URLS entries. Assets (PDF…) are included."""
+    homepage = company.homepage_url
+    # The company domain first: homepages often geo-redirect to a regional or product site.
+    sitemaps: list[str] = []
+    for origin in dict.fromkeys((f"https://{company.domain}/", homepage)):
+        try:
+            sitemaps += [url for url in await http.robots_sitemaps(origin) if _is_own(url, roots)]
+        except ParserError:
+            continue
+    sitemaps = list(dict.fromkeys(sitemaps))
+    if not sitemaps:
+        sitemaps = [urljoin(homepage, "/sitemap.xml"), urljoin(homepage, "/sitemap_index.xml")]
+
+    visited: set[str] = set()
+    emitted = 0
+    while sitemaps and len(visited) < MAX_SITEMAPS and emitted < MAX_SITEMAP_URLS:
+        sitemap_url = sitemaps.pop(0)
+        if sitemap_url in visited:
+            continue
+        visited.add(sitemap_url)
+        try:
+            response = await http.get(sitemap_url)
+            root = _parse_xml(response.content)
+        except (ParserError, etree.XMLSyntaxError, zlib.error):
+            continue
+        for node in root.xpath("//*[local-name()='url']"):
+            locations = node.xpath("./*[local-name()='loc']/text()")
+            location = str(locations[0]).strip() if locations else ""
+            if urlsplit(location).scheme not in {"http", "https"} or not _is_own(location, roots):
+                continue
+            modified = node.xpath("./*[local-name()='lastmod']/text()")
+            yield location, utc_datetime(str(modified[0]) if modified else None)
+            emitted += 1
+            if emitted >= MAX_SITEMAP_URLS:
+                return
+        for location in root.xpath("//*[local-name()='sitemap']/*[local-name()='loc']/text()"):
+            sitemaps.append(str(location).strip())
 
 
 def _select(
