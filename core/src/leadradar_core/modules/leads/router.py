@@ -2,7 +2,7 @@ import csv
 import io
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -26,7 +26,11 @@ from leadradar_core.modules.leads.schemas import (
     TrendCount,
 )
 from leadradar_core.modules.leads.trends import (
+    STRENGTH_RANK,
+    TREND_KINDS,
     evidence_key_expr,
+    strength_rank_expr,
+    trend_kind,
     trend_kind_expr,
     trend_rows_query,
     trends_from_rows,
@@ -58,6 +62,9 @@ class LeadFilters:
     min_priority: float | None
     has_new: bool | None
     q: str | None
+    trends: list[str]
+    trend_min_strength: str | None
+    watched: bool | None
 
 
 def lead_filters(
@@ -70,7 +77,25 @@ def lead_filters(
     min_priority: Annotated[float | None, Query()] = None,
     has_new: Annotated[bool | None, Query()] = None,
     q: Annotated[str | None, Query()] = None,
+    trend: Annotated[
+        list[str] | None, Query(description="One or more trend kinds (repeat or comma-separate)")
+    ] = None,
+    trend_min_strength: Annotated[
+        Literal["weak", "moderate", "strong"] | None,
+        Query(description="Minimum signal strength (temperature) of the trend: weak, moderate or strong"),
+    ] = None,
+    watched: Annotated[
+        bool | None,
+        Query(description="true: only companies the current user watches, false: only the others"),
+    ] = None,
 ) -> LeadFilters:
+    trends = _multi(trend)
+    unknown = [t for t in trends if t not in TREND_KINDS]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Unknown trend kind(s): {', '.join(unknown)}; expected any of {', '.join(TREND_KINDS)}",
+        )
     return LeadFilters(
         service_id=service_id,
         tiers=_multi(tier),
@@ -79,6 +104,9 @@ def lead_filters(
         min_priority=min_priority,
         has_new=has_new,
         q=q.strip() if q and q.strip() else None,
+        trends=trends,
+        trend_min_strength=trend_min_strength,
+        watched=watched,
     )
 
 
@@ -102,6 +130,30 @@ def _signal_stats(org_id: UUID):
         .where(Signal.org_id == org_id, Signal.status == "active")
         .group_by(Signal.company_id, Signal.service_id)
         .subquery("signal_stats")
+    )
+
+
+def _has_trend(org_id: UUID, kinds: list[str], min_strength: str | None):
+    """EXISTS: an active signal (of an active question) of the lead's company and service whose trend kind is
+    one of `kinds` (any trend kind when empty) and whose strength is at least `min_strength`."""
+    kind = trend_kind_expr()
+    where = [kind.in_(kinds) if kinds else kind.is_not(None)]
+    if min_strength is not None:
+        where.append(strength_rank_expr() >= STRENGTH_RANK[min_strength])
+    return (
+        select(Signal.id)
+        .join(
+            SignalQuestion, and_(SignalQuestion.id == Signal.question_id, SignalQuestion.is_active.is_(True))
+        )
+        .where(
+            Signal.org_id == org_id,
+            Signal.company_id == LeadScore.company_id,
+            Signal.service_id == LeadScore.service_id,
+            Signal.status == "active",
+            *where,
+        )
+        .correlate(LeadScore)
+        .exists()
     )
 
 
@@ -165,6 +217,12 @@ def _leads_query(org_id: UUID, filters: LeadFilters, sort: str, user_id: UUID | 
     if filters.q:
         pattern = f"%{filters.q.lower()}%"
         stmt = stmt.where(or_(Company.name.ilike(pattern), Company.domain.ilike(pattern)))
+    if filters.trends or filters.trend_min_strength:
+        stmt = stmt.where(_has_trend(org_id, filters.trends, filters.trend_min_strength))
+    if filters.watched is True:
+        stmt = stmt.where(watched)
+    elif filters.watched is False:
+        stmt = stmt.where(~watched)
 
     field, _, direction = sort.partition(":")
     field = field if field in SORT_FIELDS else "priority"
@@ -309,7 +367,7 @@ async def export_leads_csv(
     sort: Annotated[str, Query()] = "priority:desc",
 ) -> Response:
     """Same filters and order as GET /leads, without pagination."""
-    rows = (await session.execute(_leads_query(principal.org_id, filters, sort))).all()
+    rows = (await session.execute(_leads_query(principal.org_id, filters, sort, principal.user_id))).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -567,6 +625,7 @@ async def get_lead_detail(
                         event_date=str(s.event_date) if s.event_date else None,
                         flags=s.flags or [],
                         my_feedback=fb_by_id.get(s.id) or fb_by_key.get(s.evidence_key or ""),
+                        trend_kind=trend_kind(q.category, s.summary, s.quote),
                     )
                     for s in sig_list
                 ],

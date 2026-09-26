@@ -2734,6 +2734,68 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "name": "trend",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more trend kinds (repeat or comma-separate)",
+              "title": "Trend"
+            },
+            "description": "One or more trend kinds (repeat or comma-separate)"
+          },
+          {
+            "name": "trend_min_strength",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "weak",
+                    "moderate",
+                    "strong"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong",
+              "title": "Trend Min Strength"
+            },
+            "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong"
+          },
+          {
+            "name": "watched",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true: only companies the current user watches, false: only the others",
+              "title": "Watched"
+            },
+            "description": "true: only companies the current user watches, false: only the others"
           }
         ],
         "responses": {
@@ -2967,6 +3029,68 @@
               ],
               "title": "Q"
             }
+          },
+          {
+            "name": "trend",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more trend kinds (repeat or comma-separate)",
+              "title": "Trend"
+            },
+            "description": "One or more trend kinds (repeat or comma-separate)"
+          },
+          {
+            "name": "trend_min_strength",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "weak",
+                    "moderate",
+                    "strong"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong",
+              "title": "Trend Min Strength"
+            },
+            "description": "Minimum signal strength (temperature) of the trend: weak, moderate or strong"
+          },
+          {
+            "name": "watched",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true: only companies the current user watches, false: only the others",
+              "title": "Watched"
+            },
+            "description": "true: only companies the current user watches, false: only the others"
           }
         ],
         "responses": {
@@ -8262,6 +8386,28 @@
               }
             ],
             "title": "My Feedback"
+          },
+          "trend_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "hiring",
+                  "layoffs",
+                  "cost_cutting",
+                  "cyber_incident",
+                  "leadership_change",
+                  "growth",
+                  "ai_automation",
+                  "compliance",
+                  "distress"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Kind"
           }
         },
         "type": "object",

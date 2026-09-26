@@ -93,7 +93,7 @@
 | `GET\|POST /runs/{id}/events` | любой | SSE-поток прогона | P0 |
 | `POST /runs/{id}/cancel` · `POST /runs/{id}/retry-failed` | любой | Управление прогоном (409 для завершённого прогона; worker останавливает граф между стадиями) | P0 |
 | `POST /leads/{company_id}/outreach` → 202 · `GET /leads/{company_id}/outreach/{job_id}` | любой | Черновик outreach (CO-A1): задача worker `generate_outreach`, результат — опросом | После ядра |
-| `GET /leads?service_id=&tier=&country=&industry=&min_priority=&has_new=&q=&sort=&page=&page_size=` | любой | Рейтинг | P0 |
+| `GET /leads?service_id=&tier=&country=&industry=&min_priority=&has_new=&q=&trend=&trend_min_strength=&watched=&sort=&page=&page_size=` | любой | Рейтинг (`trend` — виды трендов, `trend_min_strength` — минимальная температура сигнала, `watched` — компании, за которыми следит пользователь) | P0 |
 | `GET /leads/{company_id}?service_id=` | любой | Карточка лида | P0 |
 | `GET /leads/export.csv?service_id=&…` | любой | CSV-экспорт | P1 |
 | `POST/DELETE /signals/{id}/feedback` · `POST /leads/{company_id}/feedback` | любой | Оценки (upsert: один голос на пользователя и цель; DELETE отзывает голос; ответ содержит пересчитанный score) | P0 / P1 |
