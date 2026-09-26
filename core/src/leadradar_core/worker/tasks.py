@@ -13,6 +13,7 @@ from leadradar_core.adapters import mapping
 from leadradar_core.adapters.progress import publish
 from leadradar_core.db.session import async_session_factory
 from leadradar_core.modules.accounts.models import Company
+from leadradar_core.modules.activity import events as domain_events
 from leadradar_core.modules.config.models import Service, SignalQuestion
 from leadradar_core.modules.intelligence.service import load_bundle, load_bundles
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
@@ -85,6 +86,8 @@ async def _finish_if_complete(run: AnalysisRun, progress: dict) -> None:
                 {"status": status, "id": run.id},
             )
         ).first()
+        if updated:
+            domain_events.run_finished(session, run.org_id, run.id, status, progress)
     if updated:  # only the task that closes the run announces it
         await _event(
             run, None, "run", status, f"Run {status}", {"status": status, **progress}, "run.finished"

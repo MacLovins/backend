@@ -1,32 +1,16 @@
-from typing import Annotated, Any
-from uuid import UUID
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
 from leadradar_core.db.session import get_db_session
+from leadradar_core.modules.activity.events import emit_event  # noqa: F401  (re-export)
 from leadradar_core.modules.activity.models import DomainEvent
 from leadradar_core.modules.activity.schemas import DomainEventOut
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/activity", tags=["activity"])
-
-
-async def emit_event(
-    session: AsyncSession,
-    org_id: UUID,
-    event_type: str,
-    payload: dict[str, Any],
-) -> DomainEvent:
-    """Helper to emit domain events in the same transaction (Transactional Outbox pattern)."""
-    ev = DomainEvent(
-        org_id=org_id,
-        type=event_type,
-        payload=payload,
-    )
-    session.add(ev)
-    return ev
 
 
 @router.get("", response_model=list[DomainEventOut])

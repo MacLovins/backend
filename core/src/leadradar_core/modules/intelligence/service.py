@@ -8,6 +8,7 @@ from uuid import UUID
 import leadradar_ai as ai
 from leadradar_core.adapters import mapping
 from leadradar_core.modules.accounts.models import Company
+from leadradar_core.modules.activity import events as domain_events
 from leadradar_core.modules.config.models import (
     DisqualificationRule,
     ICPProfile,
@@ -131,6 +132,9 @@ async def rescore_service(session: AsyncSession, org_id: UUID, service_id: UUID)
         score = ai.score_company(mapping.company_profile(company), bundle, signals[company_id], now)
         session.add(mapping.lead_score_row(score, org_id))
         tier_changes += score.tier != previous_tier.get(company_id)
+        await domain_events.lead_tier_changed(
+            session, org_id, score, previous_tier.get(company_id), company=company, service=service
+        )
     await session.flush()
     return {
         "rescored": len(companies),

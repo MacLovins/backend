@@ -32,5 +32,24 @@ class AppSettings(BaseSettings):
     FEATURE_HUBSPOT: bool = False
     EMBEDDED_WORKER: bool = True
 
+    # Scheduler (CO-22) and outbox dispatcher (CO-17)
+    RESUME_PAUSED_CRON: str = "*/15 * * * *"
+    DISPATCH_EVENTS_CRON: str = "* * * * *"
+    REFRESH_MIN_AGE_H: float = 5  # tracked companies analyzed more recently are skipped by refresh_tracked
+    EVENTS_DISPATCH_BATCH: int = 100
+    EVENTS_MAX_ATTEMPTS: int = 5  # after that a failing event is marked processed with last_error
+    # Add-ons (CO-A2 alerts, CO-A3 HubSpot): a consumer without credentials stays disabled
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_STARTTLS: bool = True
+    SMTP_FROM: str = ""
+    ALERTS_EMAIL_TO: str = ""  # comma-separated
+    HUBSPOT_PRIVATE_APP_TOKEN: str = ""
+    HUBSPOT_BASE_URL: str = "https://api.hubapi.com"
+
 
 settings = AppSettings()
