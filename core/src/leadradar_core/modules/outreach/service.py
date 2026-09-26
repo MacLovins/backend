@@ -94,33 +94,6 @@ async def get_job(session: AsyncSession, org_id: UUID, company_id: UUID, job_id:
     return job
 
 
-def _verified_signal(s: Signal) -> ai.VerifiedSignal:
-    return ai.VerifiedSignal(
-        question_id=s.question_id,
-        question_key=s.question_key,
-        question_version=s.question_version,
-        category=s.category,
-        polarity=s.polarity,
-        document_id=s.document_id or s.id,
-        chunk_id=s.chunk_id,
-        url=s.url or "",
-        source_type=s.source_type if s.source_type in ai.contracts.SourceType.__args__ else "news",
-        source_name=s.source_name,
-        quote=s.quote,
-        quote_start=s.quote_start,
-        quote_end=s.quote_end,
-        summary=s.summary,
-        strength=s.strength if s.strength in ("weak", "moderate", "strong") else "moderate",
-        confidence=float(s.confidence),
-        reliability=float(s.reliability) if s.reliability is not None else 0.8,
-        event_date=s.event_date,
-        published_at=s.published_at,
-        flags=set(s.flags or []),
-        model=s.model or "unknown",
-        prompt_version=s.prompt_version or "extract_signals@v1",
-    )
-
-
 def _request(data: dict) -> ai.OutreachRequest:
     return ai.OutreachRequest(
         channel=data.get("channel") if data.get("channel") in CHANNELS else "email",
@@ -166,7 +139,7 @@ async def run_job(session: AsyncSession, job_id: UUID, llm: ai.LLMClient) -> str
             llm,
             mapping.company_profile(company),
             bundle,
-            [_verified_signal(s) for s in rows],
+            [mapping.stored_signal(s) for s in rows],
             _request(job.request or {}),
         )
         job.result = OutreachDraftOut.model_validate(draft.model_dump()).model_dump(mode="json")

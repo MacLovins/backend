@@ -26,6 +26,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -48,6 +58,16 @@
                   },
                   "type": "object",
                   "title": "Response Health Ready Health Ready Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -88,7 +108,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -129,7 +149,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -154,6 +174,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -173,6 +203,16 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -191,6 +231,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -221,6 +271,16 @@
                   },
                   "type": "array",
                   "title": "Response List Users Api V1 Auth Users Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -264,7 +324,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -327,7 +387,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -341,6 +401,7 @@
           "meta"
         ],
         "summary": "Get Industries",
+        "description": "Industry taxonomy of the parser (ids used in ICP, companies and discovery).",
         "operationId": "get_industries_api_v1_meta_industries_get",
         "responses": {
           "200": {
@@ -356,8 +417,23 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/meta/countries": {
@@ -381,8 +457,23 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/meta/presets": {
@@ -406,8 +497,23 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/meta/labels": {
@@ -416,6 +522,7 @@
           "meta"
         ],
         "summary": "Get Labels",
+        "description": "UI labels: signal categories (ai presets) and canonical enums (ARCHITECTURE \u00a74.7).",
         "operationId": "get_labels_api_v1_meta_labels_get",
         "responses": {
           "200": {
@@ -427,8 +534,23 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/meta/usage": {
@@ -437,6 +559,7 @@
           "meta"
         ],
         "summary": "Get Usage",
+        "description": "LLM calls and tokens per model for the current quota day (Pacific time) against configured limits.",
         "operationId": "get_usage_api_v1_meta_usage_get",
         "responses": {
           "200": {
@@ -448,8 +571,23 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/services": {
@@ -470,6 +608,16 @@
                   },
                   "type": "array",
                   "title": "Response List Services Api V1 Services Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -513,7 +661,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -566,7 +714,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -622,7 +770,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -669,7 +817,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -721,7 +869,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -777,7 +925,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -835,7 +983,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -847,6 +995,7 @@
           "config"
         ],
         "summary": "Delete Question",
+        "description": "Soft delete: the question stops counting, its signals and history stay (rescored in one transaction).",
         "operationId": "delete_question_api_v1_questions__id__delete",
         "security": [
           {
@@ -874,7 +1023,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -926,7 +1075,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -974,7 +1123,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1030,7 +1179,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1082,7 +1231,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1138,7 +1287,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1196,7 +1345,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1235,7 +1384,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1283,7 +1432,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1339,7 +1488,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/services/{id}/questions/suggest": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Suggest Service Questions",
+        "operationId": "suggest_service_questions_api_v1_services__id__questions_suggest_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionSuggestionsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1432,7 +1629,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1476,7 +1673,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1524,7 +1721,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1580,7 +1777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1619,7 +1816,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1633,16 +1830,53 @@
           "accounts"
         ],
         "summary": "Import Companies Csv",
+        "description": "Import companies from CSV (\u2264 5 MB, \u2264 5 000 rows). Mappings: default template, crunchbase, custom.",
         "operationId": "import_companies_csv_api_v1_companies_import_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mapping",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "default",
+                "crunchbase",
+                "custom"
+              ],
+              "type": "string",
+              "default": "default",
+              "title": "Mapping"
+            }
+          },
+          {
+            "name": "on_duplicate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "merge",
+                "skip"
+              ],
+              "type": "string",
+              "default": "merge",
+              "title": "On Duplicate"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_import_companies_csv_api_v1_companies_import_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -1660,17 +1894,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/companies/{id}/documents": {
@@ -1711,6 +1940,29 @@
               ],
               "title": "Source Type"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
           }
         ],
         "responses": {
@@ -1719,11 +1971,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DocumentOut"
-                  },
-                  "title": "Response Get Company Documents Api V1 Companies  Id  Documents Get"
+                  "$ref": "#/components/schemas/PaginatedResponse_DocumentOut_"
                 }
               }
             }
@@ -1733,7 +1981,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1747,6 +1995,7 @@
           "discovery"
         ],
         "summary": "Search Discovery",
+        "description": "Find companies matching the service ICP (Wikidata via parser), ranked by Fit (ai.fit_score).",
         "operationId": "search_discovery_api_v1_discovery_search_post",
         "requestBody": {
           "content": {
@@ -1774,7 +2023,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1820,7 +2069,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1879,7 +2128,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1923,7 +2172,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -1971,7 +2220,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2019,10 +2268,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
+          },
+          "409": {
+            "description": "The run has already finished"
           }
         }
       }
@@ -2067,10 +2319,13 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
+          },
+          "409": {
+            "description": "The run was cancelled"
           }
         }
       }
@@ -2160,9 +2415,9 @@
           "422": {
             "description": "Validation Error",
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2253,9 +2508,9 @@
           "422": {
             "description": "Validation Error",
             "content": {
-              "application/json": {
+              "text/event-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2276,6 +2531,41 @@
           }
         ],
         "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "priority|fit|intent|risk|name|last_signal_at|signals_count, ':asc' or ':desc'",
+              "default": "priority:desc",
+              "title": "Sort"
+            },
+            "description": "priority|fit|intent|risk|name|last_signal_at|signals_count, ':asc' or ':desc'"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
           {
             "name": "service_id",
             "in": "query",
@@ -2300,14 +2590,19 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "One or more tiers (repeat or comma-separate)",
               "title": "Tier"
-            }
+            },
+            "description": "One or more tiers (repeat or comma-separate)"
           },
           {
             "name": "country",
@@ -2316,14 +2611,19 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "One or more ISO2 country codes",
               "title": "Country"
-            }
+            },
+            "description": "One or more ISO2 country codes"
           },
           {
             "name": "industry",
@@ -2332,14 +2632,19 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "One or more industry ids",
               "title": "Industry"
-            }
+            },
+            "description": "One or more industry ids"
           },
           {
             "name": "min_priority",
@@ -2388,39 +2693,6 @@
               ],
               "title": "Q"
             }
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "priority:desc",
-              "title": "Sort"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1,
-              "title": "Page"
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Page Size"
-            }
           }
         ],
         "responses": {
@@ -2439,7 +2711,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2453,6 +2725,7 @@
           "leads"
         ],
         "summary": "Export Leads Csv",
+        "description": "Same filters and order as GET /leads, without pagination.",
         "operationId": "export_leads_csv_api_v1_leads_export_csv_get",
         "security": [
           {
@@ -2460,6 +2733,16 @@
           }
         ],
         "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "priority:desc",
+              "title": "Sort"
+            }
+          },
           {
             "name": "service_id",
             "in": "query",
@@ -2484,13 +2767,108 @@
             "schema": {
               "anyOf": [
                 {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more tiers (repeat or comma-separate)",
+              "title": "Tier"
+            },
+            "description": "One or more tiers (repeat or comma-separate)"
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more ISO2 country codes",
+              "title": "Country"
+            },
+            "description": "One or more ISO2 country codes"
+          },
+          {
+            "name": "industry",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One or more industry ids",
+              "title": "Industry"
+            },
+            "description": "One or more industry ids"
+          },
+          {
+            "name": "min_priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Priority"
+            }
+          },
+          {
+            "name": "has_new",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has New"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Tier"
+              "title": "Q"
             }
           }
         ],
@@ -2508,7 +2886,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2573,7 +2951,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2616,12 +2994,12 @@
           }
         },
         "responses": {
-          "200": {
+          "202": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OutreachDraftOut"
+                  "$ref": "#/components/schemas/OutreachJobOut"
                 }
               }
             }
@@ -2631,7 +3009,65 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leads/{company_id}/outreach/{job_id}": {
+      "get": {
+        "tags": [
+          "leads"
+        ],
+        "summary": "Get Lead Outreach",
+        "operationId": "get_lead_outreach_api_v1_leads__company_id__outreach__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2668,7 +3104,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FeedbackIn"
+                "$ref": "#/components/schemas/SignalFeedbackIn"
               }
             }
           }
@@ -2689,7 +3125,54 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "feedback"
+        ],
+        "summary": "Withdraw Signal Feedback",
+        "description": "Withdraw the current user's vote on the signal; the signal and the score follow the remaining votes.",
+        "operationId": "withdraw_signal_feedback_api_v1_signals__id__feedback_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackWithdrawOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2726,7 +3209,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FeedbackIn"
+                "$ref": "#/components/schemas/LeadFeedbackIn"
               }
             }
           }
@@ -2747,7 +3230,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2802,7 +3285,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2856,7 +3339,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -2873,6 +3356,18 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "column_map": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column Map",
+            "description": "mapping=custom: JSON object target field \u2192 CSV column, e.g. {\"name\": \"Company\"}"
           }
         },
         "type": "object",
@@ -2939,6 +3434,29 @@
           "password"
         ],
         "title": "Body_token_login_api_v1_auth_token_post"
+      },
+      "CategoryQuality": {
+        "properties": {
+          "labeled": {
+            "type": "integer",
+            "title": "Labeled"
+          },
+          "precision": {
+            "type": "number",
+            "title": "Precision"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          }
+        },
+        "type": "object",
+        "required": [
+          "labeled",
+          "precision",
+          "category"
+        ],
+        "title": "CategoryQuality"
       },
       "CompanyCreate": {
         "properties": {
@@ -3106,6 +3624,27 @@
             "type": "array",
             "title": "Errors",
             "default": []
+          },
+          "total_rows": {
+            "type": "integer",
+            "title": "Total Rows",
+            "default": 0
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          },
+          "duplicates": {
+            "items": {
+              "$ref": "#/components/schemas/ImportDuplicateOut"
+            },
+            "type": "array",
+            "title": "Duplicates",
+            "default": []
           }
         },
         "type": "object",
@@ -3177,8 +3716,7 @@
           "revenue_eur": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -3553,6 +4091,14 @@
             "type": "boolean",
             "title": "Is Eu",
             "default": true
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Languages",
+            "default": []
           }
         },
         "type": "object",
@@ -3602,10 +4148,77 @@
             ],
             "title": "Employees"
           },
+          "revenue_eur": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue Eur"
+          },
+          "wikidata_qid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wikidata Qid"
+          },
+          "lei": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lei"
+          },
+          "crunchbase_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crunchbase Id"
+          },
           "fit_score": {
             "type": "number",
-            "title": "Fit Score",
-            "default": 75.0
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Fit Score"
+          },
+          "must_have_passed": {
+            "type": "boolean",
+            "title": "Must Have Passed",
+            "default": true
+          },
+          "fit_details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Fit Details",
+            "default": []
+          },
+          "data_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Gaps",
+            "default": []
           },
           "already_tracked": {
             "type": "boolean",
@@ -3627,7 +4240,8 @@
         "type": "object",
         "required": [
           "name",
-          "domain"
+          "domain",
+          "fit_score"
         ],
         "title": "DiscoveredCompany"
       },
@@ -3670,6 +4284,50 @@
               }
             ],
             "title": "Employees"
+          },
+          "revenue_eur": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue Eur"
+          },
+          "wikidata_qid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wikidata Qid"
+          },
+          "lei": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lei"
+          },
+          "crunchbase_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crunchbase Id"
           },
           "notes": {
             "anyOf": [
@@ -3719,8 +4377,62 @@
           },
           "limit": {
             "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
             "title": "Limit",
-            "default": 10
+            "default": 20
+          },
+          "countries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Countries"
+          },
+          "industries": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industries"
+          },
+          "employees_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees Min"
+          },
+          "employees_max": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Employees Max"
           },
           "country": {
             "anyOf": [
@@ -3757,7 +4469,8 @@
         "required": [
           "service_id"
         ],
-        "title": "DiscoverySearchIn"
+        "title": "DiscoverySearchIn",
+        "description": "The query is built from the service ICP; the optional fields below override it for this search."
       },
       "DiscoverySearchOut": {
         "properties": {
@@ -3771,6 +4484,12 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "query": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Query",
+            "default": {}
           }
         },
         "type": "object",
@@ -3784,10 +4503,16 @@
         "properties": {
           "name": {
             "type": "string",
+            "minLength": 1,
             "title": "Name"
           },
           "kind": {
             "type": "string",
+            "enum": [
+              "firmographic",
+              "signal",
+              "list"
+            ],
             "title": "Kind"
           },
           "condition": {
@@ -3797,13 +4522,19 @@
           },
           "action": {
             "type": "string",
-            "title": "Action",
-            "default": "disqualify"
+            "enum": [
+              "exclude",
+              "cap",
+              "flag"
+            ],
+            "title": "Action"
           },
           "cap_value": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
               },
               {
                 "type": "string",
@@ -3826,7 +4557,8 @@
         "required": [
           "name",
           "kind",
-          "condition"
+          "condition",
+          "action"
         ],
         "title": "DisqualificationRuleCreate"
       },
@@ -3862,8 +4594,7 @@
           "cap_value": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -3906,7 +4637,8 @@
           "name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -3929,7 +4661,12 @@
           "action": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "exclude",
+                  "cap",
+                  "flag"
+                ]
               },
               {
                 "type": "null"
@@ -3940,7 +4677,9 @@
           "cap_value": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
               },
               {
                 "type": "string",
@@ -4094,36 +4833,41 @@
         ],
         "title": "DomainEventOut"
       },
-      "FeedbackIn": {
+      "ErrorDetail": {
         "properties": {
-          "verdict": {
+          "code": {
             "type": "string",
-            "title": "Verdict"
+            "title": "Code"
           },
-          "service_id": {
+          "message": {
             "type": "string",
-            "format": "uuid",
-            "title": "Service Id"
+            "title": "Message"
           },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details",
+            "default": {}
           }
         },
-        "additionalProperties": false,
         "type": "object",
         "required": [
-          "verdict",
-          "service_id"
+          "code",
+          "message"
         ],
-        "title": "FeedbackIn"
+        "title": "ErrorDetail"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse"
       },
       "FeedbackOut": {
         "properties": {
@@ -4139,6 +4883,10 @@
           },
           "target_type": {
             "type": "string",
+            "enum": [
+              "signal",
+              "lead"
+            ],
             "title": "Target Type"
           },
           "target_id": {
@@ -4165,6 +4913,16 @@
               }
             ],
             "title": "Reason"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -4179,18 +4937,34 @@
         ],
         "title": "FeedbackOut"
       },
-      "HTTPValidationError": {
+      "FeedbackWithdrawOut": {
         "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
+          "signal_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Signal Id"
+          },
+          "withdrawn": {
+            "type": "boolean",
+            "title": "Withdrawn"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScoreSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
-        "title": "HTTPValidationError"
+        "required": [
+          "signal_id",
+          "withdrawn"
+        ],
+        "title": "FeedbackWithdrawOut"
       },
       "ICPProfileIn": {
         "properties": {
@@ -4213,7 +4987,8 @@
           "employees_min": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -4224,7 +4999,8 @@
           "employees_max": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 0.0
               },
               {
                 "type": "null"
@@ -4235,7 +5011,8 @@
           "revenue_min_eur": {
             "anyOf": [
               {
-                "type": "number"
+                "type": "number",
+                "minimum": 0.0
               },
               {
                 "type": "string",
@@ -4315,8 +5092,7 @@
           "revenue_min_eur": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "number"
               },
               {
                 "type": "null"
@@ -4367,6 +5143,39 @@
         ],
         "title": "ICPProfileOut"
       },
+      "ImportDuplicateOut": {
+        "properties": {
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "first_row": {
+            "type": "integer",
+            "title": "First Row"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "merge",
+              "skip"
+            ],
+            "title": "Action"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row",
+          "first_row",
+          "domain",
+          "action"
+        ],
+        "title": "ImportDuplicateOut",
+        "description": "A row whose domain already appeared earlier in the same file."
+      },
       "IndustryOut": {
         "properties": {
           "id": {
@@ -4376,6 +5185,30 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "nace": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Nace",
+            "default": []
+          },
+          "nis2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nis2"
+          },
+          "dora": {
+            "type": "boolean",
+            "title": "Dora",
+            "default": false
           }
         },
         "type": "object",
@@ -4407,6 +5240,110 @@
             },
             "type": "object",
             "title": "Statuses"
+          },
+          "polarities": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Polarities",
+            "default": {}
+          },
+          "source_types": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Source Types",
+            "default": {}
+          },
+          "strengths": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Strengths",
+            "default": {}
+          },
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Answers",
+            "default": {}
+          },
+          "tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Tiers",
+            "default": {}
+          },
+          "stages": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Stages",
+            "default": {}
+          },
+          "run_kinds": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Run Kinds",
+            "default": {}
+          },
+          "run_statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Run Statuses",
+            "default": {}
+          },
+          "signal_feedback": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Signal Feedback",
+            "default": {}
+          },
+          "lead_feedback": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Lead Feedback",
+            "default": {}
+          },
+          "roles": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Roles",
+            "default": {}
+          },
+          "reject_reasons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Reject Reasons",
+            "default": {}
+          },
+          "signal_flags": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Signal Flags",
+            "default": {}
           }
         },
         "type": "object",
@@ -4439,6 +5376,30 @@
             "type": "array",
             "title": "Signals By Question",
             "default": []
+          },
+          "questions_without_evidence": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Questions Without Evidence",
+            "default": []
+          },
+          "my_feedback": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "good_fit",
+                  "bad_fit"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Feedback"
           },
           "decision_makers": {
             "items": {
@@ -4473,6 +5434,62 @@
           "score"
         ],
         "title": "LeadDetail"
+      },
+      "LeadFeedbackIn": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "good_fit",
+              "bad_fit"
+            ],
+            "title": "Verdict"
+          },
+          "service_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Service Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "verdict",
+          "service_id"
+        ],
+        "title": "LeadFeedbackIn"
+      },
+      "LeadFeedbackStats": {
+        "properties": {
+          "labeled": {
+            "type": "integer",
+            "title": "Labeled",
+            "default": 0
+          },
+          "good_fit": {
+            "type": "integer",
+            "title": "Good Fit",
+            "default": 0
+          },
+          "bad_fit": {
+            "type": "integer",
+            "title": "Bad Fit",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "LeadFeedbackStats"
       },
       "LeadListItem": {
         "properties": {
@@ -4517,7 +5534,8 @@
           "last_signal_at": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "date"
               },
               {
                 "type": "null"
@@ -4619,6 +5637,93 @@
           "user"
         ],
         "title": "LoginResponse"
+      },
+      "ModelUsageOut": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "pool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pool"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls",
+            "default": 0
+          },
+          "quota_calls": {
+            "type": "integer",
+            "title": "Quota Calls",
+            "default": 0
+          },
+          "cache_hits": {
+            "type": "integer",
+            "title": "Cache Hits",
+            "default": 0
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "rpd_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpd Limit"
+          },
+          "rpm_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpm Limit"
+          },
+          "remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "title": "ModelUsageOut"
       },
       "OutreachDraftOut": {
         "properties": {
@@ -4747,6 +5852,83 @@
         "type": "object",
         "title": "OutreachGenerateIn"
       },
+      "OutreachJobOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "company_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Company Id"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutreachDraftOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "company_id",
+          "status",
+          "created_at"
+        ],
+        "title": "OutreachJobOut",
+        "description": "Poll `GET /leads/{company_id}/outreach/{id}` until status is succeeded (draft set) or failed (error set)."
+      },
       "PaginatedResponse_CompanyOut_": {
         "properties": {
           "items": {
@@ -4777,6 +5959,37 @@
           "page_size"
         ],
         "title": "PaginatedResponse[CompanyOut]"
+      },
+      "PaginatedResponse_DocumentOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "PaginatedResponse[DocumentOut]"
       },
       "PaginatedResponse_LeadListItem_": {
         "properties": {
@@ -4822,6 +6035,19 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "questions_count": {
+            "type": "integer",
+            "title": "Questions Count",
+            "default": 0
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories",
+            "default": []
           }
         },
         "type": "object",
@@ -4846,8 +6072,7 @@
           },
           "by_category": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/CategoryQuality"
             },
             "type": "array",
             "title": "By Category",
@@ -4855,12 +6080,19 @@
           },
           "by_source": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/SourceQuality"
             },
             "type": "array",
             "title": "By Source",
             "default": []
+          },
+          "leads": {
+            "$ref": "#/components/schemas/LeadFeedbackStats",
+            "default": {
+              "labeled": 0,
+              "good_fit": 0,
+              "bad_fit": 0
+            }
           },
           "verifier": {
             "additionalProperties": true,
@@ -4912,6 +6144,47 @@
         ],
         "title": "QuestionSignals"
       },
+      "QuestionSuggestionsOut": {
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestedQuestionOut"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestedRuleOut"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt_version": {
+            "type": "string",
+            "title": "Prompt Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "questions",
+          "rules",
+          "model",
+          "prompt_version"
+        ],
+        "title": "QuestionSuggestionsOut"
+      },
       "RescoreResult": {
         "properties": {
           "version": {
@@ -4944,8 +6217,21 @@
         "properties": {
           "kind": {
             "type": "string",
+            "enum": [
+              "analyze",
+              "refresh"
+            ],
             "title": "Kind",
             "default": "analyze"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "incremental",
+              "full"
+            ],
+            "title": "Mode",
+            "default": "incremental"
           },
           "company_ids": {
             "items": {
@@ -4953,8 +6239,9 @@
               "format": "uuid"
             },
             "type": "array",
-            "title": "Company Ids",
-            "default": []
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Company Ids"
           },
           "service_ids": {
             "items": {
@@ -4963,11 +6250,15 @@
             },
             "type": "array",
             "title": "Service Ids",
+            "description": "Empty: every active service of the org",
             "default": []
           }
         },
         "additionalProperties": false,
         "type": "object",
+        "required": [
+          "company_ids"
+        ],
         "title": "RunCreate"
       },
       "RunOut": {
@@ -5056,8 +6347,7 @@
       "ScoreSummary": {
         "properties": {
           "priority": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Priority"
           },
           "tier": {
@@ -5065,18 +6355,15 @@
             "title": "Tier"
           },
           "fit": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Fit"
           },
           "intent": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Intent"
           },
           "risk": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Risk"
           },
           "disqualified": {
@@ -5093,7 +6380,8 @@
           "intent",
           "risk"
         ],
-        "title": "ScoreSummary"
+        "title": "ScoreSummary",
+        "description": "Scores are JSON numbers (the ORM keeps them as Numeric/Decimal)."
       },
       "ScoringProfileIn": {
         "properties": {
@@ -5334,6 +6622,48 @@
         "type": "object",
         "title": "ServiceUpdate"
       },
+      "SignalFeedbackIn": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "correct",
+              "incorrect",
+              "irrelevant"
+            ],
+            "title": "Verdict"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "verdict"
+        ],
+        "title": "SignalFeedbackIn"
+      },
       "SignalItem": {
         "properties": {
           "id": {
@@ -5354,8 +6684,7 @@
             "title": "Strength"
           },
           "confidence": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Confidence"
           },
           "url": {
@@ -5395,6 +6724,22 @@
             "type": "array",
             "title": "Flags",
             "default": []
+          },
+          "my_feedback": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "correct",
+                  "incorrect",
+                  "irrelevant"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Feedback"
           }
         },
         "type": "object",
@@ -5429,19 +6774,39 @@
           },
           "polarity": {
             "type": "string",
+            "enum": [
+              "positive",
+              "negative"
+            ],
             "title": "Polarity",
             "default": "positive"
           },
           "weight": {
             "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
             "title": "Weight",
             "default": "medium"
           },
           "source_types": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "news",
+                "website",
+                "jobs",
+                "report",
+                "registry",
+                "incident",
+                "derived",
+                "manual"
+              ]
             },
             "type": "array",
+            "minItems": 1,
             "title": "Source Types",
             "default": [
               "website",
@@ -5451,6 +6816,7 @@
           },
           "recency_days": {
             "type": "integer",
+            "exclusiveMinimum": 0.0,
             "title": "Recency Days",
             "default": 180
           },
@@ -5603,7 +6969,8 @@
           "text": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -5625,7 +6992,11 @@
           "polarity": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "positive",
+                  "negative"
+                ]
               },
               {
                 "type": "null"
@@ -5636,7 +7007,12 @@
           "weight": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "high",
+                  "medium",
+                  "low"
+                ]
               },
               {
                 "type": "null"
@@ -5648,9 +7024,20 @@
             "anyOf": [
               {
                 "items": {
-                  "type": "string"
+                  "type": "string",
+                  "enum": [
+                    "news",
+                    "website",
+                    "jobs",
+                    "report",
+                    "registry",
+                    "incident",
+                    "derived",
+                    "manual"
+                  ]
                 },
-                "type": "array"
+                "type": "array",
+                "minItems": 1
               },
               {
                 "type": "null"
@@ -5661,7 +7048,8 @@
           "recency_days": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "exclusiveMinimum": 0.0
               },
               {
                 "type": "null"
@@ -5713,6 +7101,148 @@
         "type": "object",
         "title": "SignalQuestionUpdate"
       },
+      "SourceQuality": {
+        "properties": {
+          "labeled": {
+            "type": "integer",
+            "title": "Labeled"
+          },
+          "precision": {
+            "type": "number",
+            "title": "Precision"
+          },
+          "source_type": {
+            "type": "string",
+            "title": "Source Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "labeled",
+          "precision",
+          "source_type"
+        ],
+        "title": "SourceQuality"
+      },
+      "SuggestedQuestionOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "polarity": {
+            "type": "string",
+            "title": "Polarity"
+          },
+          "weight": {
+            "type": "string",
+            "title": "Weight"
+          },
+          "source_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Types"
+          },
+          "recency_days": {
+            "type": "integer",
+            "title": "Recency Days"
+          },
+          "keywords": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Keywords"
+          },
+          "job_titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Job Titles"
+          },
+          "negative_terms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Negative Terms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "text",
+          "category",
+          "polarity",
+          "weight",
+          "source_types",
+          "recency_days",
+          "keywords",
+          "job_titles",
+          "negative_terms"
+        ],
+        "title": "SuggestedQuestionOut"
+      },
+      "SuggestedRuleOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "condition": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Condition"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "cap_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cap Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "condition",
+          "action",
+          "cap_value"
+        ],
+        "title": "SuggestedRuleOut"
+      },
       "TokenResponse": {
         "properties": {
           "access_token": {
@@ -5733,6 +7263,30 @@
       },
       "UsageOut": {
         "properties": {
+          "day_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Start"
+          },
+          "resets_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resets At"
+          },
           "llm_calls_24h": {
             "type": "integer",
             "title": "Llm Calls 24H",
@@ -5752,10 +7306,27 @@
             "type": "integer",
             "title": "Documents Scanned 24H",
             "default": 0
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsageOut"
+            },
+            "type": "array",
+            "title": "Models",
+            "default": []
+          },
+          "documents_by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Documents By Source",
+            "default": {}
           }
         },
         "type": "object",
-        "title": "UsageOut"
+        "title": "UsageOut",
+        "description": "LLM usage for the current quota day (Gemini resets daily quotas at midnight Pacific time)."
       },
       "UserCreate": {
         "properties": {
@@ -5920,46 +7491,6 @@
         "additionalProperties": false,
         "type": "object",
         "title": "UserUpdate"
-      },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
-          },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
-          }
-        },
-        "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError"
       }
     },
     "securitySchemes": {
