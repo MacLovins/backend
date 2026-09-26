@@ -56,3 +56,24 @@ class LeadDetail(BaseModel):
     decision_makers: list[str] = []
     history: list[dict[str, Any]] = []
     sources_summary: dict[str, int] = {}
+
+
+class OutreachGenerateIn(BaseModel):
+    service_id: UUID | None = None
+    channel: str = "email"
+    language: str = "en"
+    tone: str = "professional"
+    sender_name: str | None = None
+    sender_title: str | None = None
+    sender_company: str = "LeadRadar"
+
+
+class OutreachDraftOut(BaseModel):
+    channel: str
+    subject: str | None = None
+    body: str
+    referenced_signals: list[UUID] = []
+    referenced_quotes: list[str] = []
+    hook: str | None = None
+    call_to_action: str
+    language: str = "en"

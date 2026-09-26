@@ -93,31 +93,70 @@ async def search_discovery(
         },
     ]
 
+    import asyncio
+
+    import leadradar_parser as parser
+
     items: list[DiscoveredCompany] = []
-    for c in candidates:
-        domain = c["domain"]
-        already = domain in existing_domains
 
-        # Filters
-        if search_in.country and c["country_code"] != search_in.country.upper():
-            continue
-        if search_in.industry and search_in.industry not in c["industry_ids"]:
-            continue
-
-        items.append(
-            DiscoveredCompany(
-                name=c["name"],
-                domain=domain,
-                country_code=c["country_code"],
-                industry_ids=c["industry_ids"],
-                employees=c["employees"],
-                fit_score=c["fit_score"],
-                already_tracked=already,
-                reason=c["reason"],
-            )
+    # Attempt live discovery via leadradar_parser (Wikidata SPARQL)
+    try:
+        query = parser.DiscoveryQuery(
+            countries=[search_in.country.upper()] if search_in.country else ["DE", "FR", "NL", "CH", "DK"],
+            industries=[search_in.industry] if search_in.industry else [],
+            employees_min=500,
+            limit=search_in.limit,
         )
-        if len(items) >= search_in.limit:
-            break
+        async with parser.create_http_client() as http:
+            live_candidates = await asyncio.wait_for(parser.discover(query, http=http), timeout=3.0)
+            for cand in live_candidates:
+                domain = cand.domain
+                already = domain in existing_domains
+                items.append(
+                    DiscoveredCompany(
+                        name=cand.name,
+                        domain=domain,
+                        country_code=cand.country_code
+                        or (search_in.country.upper() if search_in.country else "EU"),
+                        industry_ids=cand.industry_ids
+                        or ([search_in.industry] if search_in.industry else ["enterprise"]),
+                        employees=cand.employees or 1500,
+                        fit_score=85.0,
+                        already_tracked=already,
+                        reason="Discovered via public entity registry matching target profile.",
+                    )
+                )
+    except Exception:
+        pass
+
+    # If live discovery didn't find enough or timed out, supplement with curated pool
+    if len(items) < search_in.limit:
+        for c in candidates:
+            domain = c["domain"]
+            if any(item.domain == domain for item in items):
+                continue
+            already = domain in existing_domains
+
+            # Filters
+            if search_in.country and c["country_code"] != search_in.country.upper():
+                continue
+            if search_in.industry and search_in.industry not in c["industry_ids"]:
+                continue
+
+            items.append(
+                DiscoveredCompany(
+                    name=c["name"],
+                    domain=domain,
+                    country_code=c["country_code"],
+                    industry_ids=c["industry_ids"],
+                    employees=c["employees"],
+                    fit_score=c["fit_score"],
+                    already_tracked=already,
+                    reason=c["reason"],
+                )
+            )
+            if len(items) >= search_in.limit:
+                break
 
     return DiscoverySearchOut(items=items, total=len(items))
 

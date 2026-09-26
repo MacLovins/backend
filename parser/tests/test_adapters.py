@@ -342,3 +342,60 @@ async def test_serpapi_adapter_fetch(http: HttpClient, monkeypatch: pytest.Monke
     assert len(docs) >= 1
     assert docs[0].title == "DHL integrates cybersecurity mesh architecture"
     assert docs[0].source_name == "serpapi"
+
+
+@respx.mock
+async def test_rsshub_adapter_fetch(http: HttpClient) -> None:
+    from leadradar_parser.adapters.news_rsshub import RSSHubAdapter
+
+    rss_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+        <channel>
+            <title>DHL News Feed</title>
+            <item>
+                <title>DHL signs cloud transformation contract</title>
+                <description>Major cloud migration completed.</description>
+                <link>https://rss.example/item1</link>
+                <pubDate>Fri, 26 Sep 2026 09:00:00 GMT</pubDate>
+            </item>
+        </channel>
+    </rss>"""
+    respx.get(url__regex=r"^https://rsshub\.app/.*").mock(return_value=httpx.Response(200, text=rss_xml))
+    company = make_company(name="DHL", domain="dhl.com")
+    docs = await run(RSSHubAdapter(), company, make_plan("news"), http)
+
+    assert len(docs) == 1
+    assert docs[0].title == "DHL signs cloud transformation contract"
+    assert docs[0].source_name == "rsshub"
+
+
+@respx.mock
+async def test_crunchbase_adapter_fetch(http: HttpClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from leadradar_parser.adapters.registry_crunchbase import CrunchbaseAdapter
+
+    monkeypatch.setenv("CRUNCHBASE_API_KEY", "test-cb-key")
+    cb_data = {
+        "properties": {
+            "title": "DHL Group",
+            "short_description": "Global logistics and shipping powerhouse.",
+            "num_employees_enum": "c_10001_plus",
+        }
+    }
+    respx.get(url__regex=r"^https://api\.crunchbase\.com/api/v4/entities/organizations/.*").mock(
+        return_value=httpx.Response(200, json=cb_data)
+    )
+    company = make_company(name="DHL Group", domain="dhl.com")
+    docs = await run(CrunchbaseAdapter(), company, make_plan("registry"), http)
+
+    assert len(docs) == 1
+    assert "DHL Group" in docs[0].title
+    assert docs[0].source_name == "crunchbase"
+
+
+async def test_playwright_adapter_handles_uninstalled_or_missing_browser(http: HttpClient) -> None:
+    from leadradar_parser.adapters.web_playwright import PlaywrightAdapter
+
+    company = make_company(name="DHL", domain="dhl.com")
+    docs = await run(PlaywrightAdapter(), company, make_plan("website"), http)
+    # Should not raise exception even if chromium is not installed in the testing environment
+    assert isinstance(docs, list)

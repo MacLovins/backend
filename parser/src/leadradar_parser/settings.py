@@ -14,12 +14,14 @@ class ParserSettings(BaseSettings):
         default_factory=lambda: [
             "google_news",
             "gdelt",
+            "rsshub",
             "website",
             "jobs_ats",
             "careers_html",
             "wikidata",
             *(["newsapi"] if os.getenv("NEWSAPI_KEY") else []),
             *(["serpapi"] if os.getenv("SERPAPI_KEY") else []),
+            *(["crunchbase"] if os.getenv("CRUNCHBASE_API_KEY") else []),
         ]
     )
     user_agent: str = (

@@ -16,6 +16,8 @@ from leadradar_ai.contracts import (
     ICPConfig,
     LeadScore,
     LLMCallRecord,
+    OutreachDraft,
+    OutreachRequest,
     ProgressEvent,
     QuestionConfig,
     Reason,
@@ -42,6 +44,7 @@ from leadradar_ai.errors import (
 from leadradar_ai.evals import EvalResult, load_companies, load_labels, run_eval, write_report
 from leadradar_ai.extraction import PROMPT_VERSION as EXTRACTION_PROMPT_VERSION
 from leadradar_ai.llm import GeminiClient, LLMClient, LLMRequest, LLMResult
+from leadradar_ai.outreach import generate_outreach
 from leadradar_ai.pipeline import (
     AnalysisDeps,
     AnalysisOutput,
@@ -89,6 +92,8 @@ __all__ = [
     "LLMUnavailable",
     "LeadRadarAIError",
     "LeadScore",
+    "OutreachDraft",
+    "OutreachRequest",
     "Preset",
     "ProgressEvent",
     "ProgressSink",
@@ -113,6 +118,7 @@ __all__ = [
     "evaluate_rules",
     "expand_question",
     "fit_score",
+    "generate_outreach",
     "languages_for_icp",
     "lead_sort_key",
     "list_presets",

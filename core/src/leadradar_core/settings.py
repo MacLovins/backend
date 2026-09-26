@@ -27,9 +27,10 @@ class AppSettings(BaseSettings):
     REFRESH_CRON: str = "0 */6 * * *"
 
     # Feature flags
-    FEATURE_OUTREACH: bool = False
+    FEATURE_OUTREACH: bool = True
     FEATURE_ALERTS: bool = False
     FEATURE_HUBSPOT: bool = False
+    EMBEDDED_WORKER: bool = True
 
 
 settings = AppSettings()
