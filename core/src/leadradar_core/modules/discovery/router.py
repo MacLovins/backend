@@ -1,5 +1,9 @@
+import asyncio
 from typing import Annotated
+from uuid import NAMESPACE_URL, UUID, uuid5
 
+import leadradar_ai as ai
+import leadradar_parser as parser
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
@@ -13,9 +17,14 @@ from leadradar_core.modules.discovery.schemas import (
     DiscoverySearchIn,
     DiscoverySearchOut,
 )
+from leadradar_core.modules.intelligence.service import load_bundle
+from leadradar_core.settings import settings
 from leadradar_core.utils.domain import normalize_domain
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog import get_logger
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -42,200 +51,258 @@ COUNTRY_TO_ISO: dict[str, str] = {
 }
 
 
+# Fallback pool when Wikidata is slow or unreachable. Firmographics only: Fit is computed from the ICP.
+CURATED: list[dict] = [
+    {
+        "name": "Deutsche Bahn",
+        "domain": "bahn.de",
+        "country_code": "DE",
+        "industry_ids": ["rail", "logistics"],
+        "employees": 320000,
+    },
+    {
+        "name": "E.ON",
+        "domain": "eon.com",
+        "country_code": "DE",
+        "industry_ids": ["energy_utilities"],
+        "employees": 72000,
+    },
+    {
+        "name": "Siemens AG",
+        "domain": "siemens.com",
+        "country_code": "DE",
+        "industry_ids": ["manufacturing"],
+        "employees": 320000,
+    },
+    {
+        "name": "Bayer AG",
+        "domain": "bayer.com",
+        "country_code": "DE",
+        "industry_ids": ["pharma"],
+        "employees": 94000,
+    },
+    {
+        "name": "BMW Group",
+        "domain": "bmwgroup.com",
+        "country_code": "DE",
+        "industry_ids": ["automotive"],
+        "employees": 155000,
+    },
+    {
+        "name": "SAP SE",
+        "domain": "sap.com",
+        "country_code": "DE",
+        "industry_ids": ["software"],
+        "employees": 108000,
+    },
+    {
+        "name": "Kuehne + Nagel",
+        "domain": "kuehne-nagel.com",
+        "country_code": "CH",
+        "industry_ids": ["logistics"],
+        "employees": 79000,
+    },
+    {
+        "name": "Nestlé",
+        "domain": "nestle.com",
+        "country_code": "CH",
+        "industry_ids": ["food_beverage"],
+        "employees": 270000,
+    },
+    {
+        "name": "A.P. Moller - Maersk",
+        "domain": "maersk.com",
+        "country_code": "DK",
+        "industry_ids": ["logistics"],
+        "employees": 100000,
+    },
+    {
+        "name": "DSV",
+        "domain": "dsv.com",
+        "country_code": "DK",
+        "industry_ids": ["logistics"],
+        "employees": 75000,
+    },
+    {
+        "name": "ASML Holding",
+        "domain": "asml.com",
+        "country_code": "NL",
+        "industry_ids": ["manufacturing"],
+        "employees": 42000,
+    },
+    {
+        "name": "Schneider Electric",
+        "domain": "se.com",
+        "country_code": "FR",
+        "industry_ids": ["manufacturing", "energy_utilities"],
+        "employees": 150000,
+    },
+    {
+        "name": "TotalEnergies",
+        "domain": "totalenergies.com",
+        "country_code": "FR",
+        "industry_ids": ["oil_gas", "energy_utilities"],
+        "employees": 100000,
+    },
+    {
+        "name": "Amazon",
+        "domain": "amazon.com",
+        "country_code": "US",
+        "industry_ids": ["retail"],
+        "employees": 1500000,
+    },
+]
+COUNTRY_NAMES = {
+    "DE": "Germany",
+    "CH": "Switzerland",
+    "DK": "Denmark",
+    "NL": "Netherlands",
+    "FR": "France",
+    "US": "United States",
+}
+LIVE_DISCOVERY_TIMEOUT_S = 10.0
+
+
+def _iso(country: str | None) -> str:
+    norm = (country or "").strip().upper()
+    return COUNTRY_TO_ISO.get(norm, norm)
+
+
+def _fit(candidate: dict, icp: ai.ICPConfig) -> ai.FitResult:
+    profile = ai.CompanyProfile(
+        id=uuid5(NAMESPACE_URL, f"leadradar:discovery:{candidate['domain']}"),
+        name=candidate["name"],
+        domain=candidate["domain"],
+        country_code=candidate.get("country_code"),
+        industry_ids=candidate.get("industry_ids") or [],
+        employees=candidate.get("employees"),
+        revenue_eur=candidate.get("revenue_eur"),
+    )
+    return ai.fit_score(profile, icp)
+
+
+def _reason(fit: ai.FitResult, source: str) -> str:
+    matched = [d["label"] for d in fit.details if d["status"] in ("pass", "match")]
+    text = "; ".join(matched[:3]) or "Passes the ICP filters"
+    return f"{text} ({source})"
+
+
+async def _service_icp(session: AsyncSession, org_id, service_id) -> ai.ICPConfig:
+    stmt = select(Service).where(Service.org_id == org_id)
+    stmt = stmt.where(Service.id == service_id) if service_id else stmt.where(Service.is_active.is_(True))
+    service = (await session.execute(stmt.order_by(Service.slug).limit(1))).scalar_one_or_none()
+    if service is None:
+        if service_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+        return ai.ICPConfig()
+    return (await load_bundle(session, service)).icp
+
+
+async def _live_candidates(
+    icp: ai.ICPConfig, countries: list[str], industry: str | None, limit: int
+) -> list[dict]:
+    """Wikidata candidates for the ICP; [] when the registry is slow or unreachable (and in tests: no network)."""
+    if settings.ENV == "test":
+        return []
+    industries = [industry] if industry else list(icp.industries_any)
+    if not industries:
+        industries = [v for c in icp.nice_to_have if c.kind == "industry_in" for v in c.values]
+    query = parser.DiscoveryQuery(
+        countries=countries or list(icp.countries) or ["DE", "FR", "NL", "CH", "DK"],
+        industries=[str(i) for i in industries],
+        employees_min=icp.employees_min,
+        employees_max=icp.employees_max,
+        limit=max(limit * 3, 30),
+    )
+    try:
+        async with parser.create_http_client() as http:
+            found = await asyncio.wait_for(
+                parser.discover(query, http=http), timeout=LIVE_DISCOVERY_TIMEOUT_S
+            )
+    except Exception as e:
+        log.warning("discovery_live_failed", error=str(e) or type(e).__name__)
+        return []
+    return [c.model_dump() for c in found]
+
+
+async def _ranked(
+    session: AsyncSession, org_id, service_id, country: str | None, industry: str | None, limit: int
+) -> list[DiscoveredCompany]:
+    """Live and curated candidates, deduplicated by domain, scored with ai.fit_score against the service ICP.
+    Candidates that fail a must-have (Fit 0) are dropped; the rest are sorted by Fit."""
+    icp = await _service_icp(session, org_id, service_id)
+    iso = _iso(country)
+    tracked = set((await session.execute(select(Company.domain).where(Company.org_id == org_id))).scalars())
+    pool = [(c, "Wikidata") for c in await _live_candidates(icp, [iso] if iso else [], industry, limit)]
+    pool += [(c, "curated list") for c in CURATED]
+
+    seen: set[str] = set()
+    items: list[DiscoveredCompany] = []
+    for candidate, source in pool:
+        domain = normalize_domain(candidate["domain"]) or candidate["domain"]
+        if domain in seen:
+            continue
+        seen.add(domain)
+        if iso and candidate.get("country_code") != iso:
+            continue
+        if industry and industry not in (candidate.get("industry_ids") or []):
+            continue
+        fit = _fit(candidate, icp)
+        if not fit.must_have_passed:
+            continue
+        items.append(
+            DiscoveredCompany(
+                name=candidate["name"],
+                domain=domain,
+                country_code=candidate.get("country_code"),
+                industry_ids=candidate.get("industry_ids") or [],
+                employees=candidate.get("employees"),
+                fit_score=round(fit.fit, 1),
+                already_tracked=domain in tracked,
+                reason=_reason(fit, source),
+            )
+        )
+    items.sort(key=lambda i: (-i.fit_score, i.name.casefold()))
+    return items[:limit]
+
+
 @router.post("/search", response_model=DiscoverySearchOut)
 async def search_discovery(
     search_in: DiscoverySearchIn,
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> DiscoverySearchOut:
-    service = await session.get(Service, search_in.service_id)
-    if not service or service.org_id != principal.org_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
-
-    # Query currently tracked companies in org to mark already_tracked
-    existing_stmt = select(Company.domain).where(Company.org_id == principal.org_id)
-    existing_res = await session.execute(existing_stmt)
-    existing_domains = set(existing_res.scalars().all())
-
-    # Curated candidate pool for discovery simulation / parser integration
-    candidates = [
-        {
-            "name": "Kuehne + Nagel",
-            "domain": "kuehne-nagel.com",
-            "country_code": "CH",
-            "industry_ids": ["logistics"],
-            "employees": 79000,
-            "fit_score": 88.5,
-            "reason": "Large European logistics firm actively deploying enterprise automation.",
-        },
-        {
-            "name": "DSV Panalpina",
-            "domain": "dsv.com",
-            "country_code": "DK",
-            "industry_ids": ["logistics"],
-            "employees": 75000,
-            "fit_score": 85.0,
-            "reason": "Major global transport provider undergoing supply chain digitization.",
-        },
-        {
-            "name": "Schneider Electric",
-            "domain": "se.com",
-            "country_code": "FR",
-            "industry_ids": ["manufacturing", "energy"],
-            "employees": 135000,
-            "fit_score": 91.0,
-            "reason": "Energy management & industrial automation giant.",
-        },
-        {
-            "name": "Bayer AG",
-            "domain": "bayer.com",
-            "country_code": "DE",
-            "industry_ids": ["healthcare"],
-            "employees": 100000,
-            "fit_score": 79.5,
-            "reason": "Pharma and life sciences enterprise with automated labs.",
-        },
-        {
-            "name": "ASML",
-            "domain": "asml.com",
-            "country_code": "NL",
-            "industry_ids": ["manufacturing"],
-            "employees": 42000,
-            "fit_score": 93.0,
-            "reason": "Semiconductor equipment leader investing heavily in AI and process intelligence.",
-        },
-        {
-            "name": "TotalEnergies",
-            "domain": "totalenergies.com",
-            "country_code": "FR",
-            "industry_ids": ["energy"],
-            "employees": 101000,
-            "fit_score": 76.0,
-            "reason": "Energy transition and automated monitoring initiatives.",
-        },
-    ]
-
-    import asyncio
-
-    import leadradar_parser as parser
-
-    items: list[DiscoveredCompany] = []
-
-    norm_country = search_in.country.upper() if search_in.country else ""
-    target_iso = COUNTRY_TO_ISO.get(norm_country, norm_country)
-
-    # Attempt live discovery via leadradar_parser (Wikidata SPARQL)
-    try:
-        query = parser.DiscoveryQuery(
-            countries=[target_iso] if target_iso else ["DE", "FR", "NL", "CH", "DK"],
-            industries=[search_in.industry] if search_in.industry else [],
-            employees_min=500,
-            limit=search_in.limit,
-        )
-        async with parser.create_http_client() as http:
-            live_candidates = await asyncio.wait_for(parser.discover(query, http=http), timeout=3.0)
-            for cand in live_candidates:
-                domain = cand.domain
-                already = domain in existing_domains
-                items.append(
-                    DiscoveredCompany(
-                        name=cand.name,
-                        domain=domain,
-                        country_code=cand.country_code
-                        or (target_iso or "EU"),
-                        industry_ids=cand.industry_ids
-                        or ([search_in.industry] if search_in.industry else ["enterprise"]),
-                        employees=cand.employees or 1500,
-                        fit_score=85.0,
-                        already_tracked=already,
-                        reason="Discovered via public entity registry matching target profile.",
-                    )
-                )
-    except Exception:
-        pass
-
-    # If live discovery didn't find enough or timed out, supplement with curated pool
-    if len(items) < search_in.limit:
-        for c in candidates:
-            domain = c["domain"]
-            if any(item.domain == domain for item in items):
-                continue
-            already = domain in existing_domains
-
-            # Filters
-            if search_in.country and target_iso and c["country_code"] != target_iso:
-                continue
-            if search_in.industry and search_in.industry not in c["industry_ids"]:
-                continue
-
-            items.append(
-                DiscoveredCompany(
-                    name=c["name"],
-                    domain=domain,
-                    country_code=c["country_code"],
-                    industry_ids=c["industry_ids"],
-                    employees=c["employees"],
-                    fit_score=c["fit_score"],
-                    already_tracked=already,
-                    reason=c["reason"],
-                )
-            )
-            if len(items) >= search_in.limit:
-                break
-
+    items = await _ranked(
+        session,
+        principal.org_id,
+        search_in.service_id,
+        search_in.country,
+        search_in.industry,
+        search_in.limit,
+    )
     return DiscoverySearchOut(items=items, total=len(items))
 
 
 @router.get("", response_model=list[dict])
 async def list_discovery_candidates(
-    country: str = Query(default=""),
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    country: Annotated[str, Query()] = "",
+    service_id: Annotated[UUID | None, Query()] = None,
 ) -> list[dict]:
-    """Lightweight discovery query endpoint for UI."""
-    norm = country.strip().upper()
-    iso = COUNTRY_TO_ISO.get(norm, norm)
-    country_name_map = {
-        "DE": "Germany",
-        "CH": "Switzerland",
-        "DK": "Denmark",
-        "NL": "Netherlands",
-        "FR": "France",
-        "US": "United States",
-    }
-    curated = [
-        {"id": "db", "name": "Deutsche Bahn", "domain": "bahn.de", "country_code": "DE", "fit": 88},
-        {"id": "eon", "name": "E.ON", "domain": "eon.com", "country_code": "DE", "fit": 79},
-        {"id": "siemens", "name": "Siemens AG", "domain": "siemens.com", "country_code": "DE", "fit": 94},
-        {"id": "bayer", "name": "Bayer AG", "domain": "bayer.com", "country_code": "DE", "fit": 82},
-        {"id": "bmw", "name": "BMW Group", "domain": "bmwgroup.com", "country_code": "DE", "fit": 91},
-        {"id": "sap", "name": "SAP SE", "domain": "sap.com", "country_code": "DE", "fit": 96},
-        {"id": "kn", "name": "Kuehne + Nagel", "domain": "kuehne-nagel.com", "country_code": "CH", "fit": 95},
-        {"id": "nestle", "name": "Nestlé", "domain": "nestle.com", "country_code": "CH", "fit": 87},
-        {"id": "maersk", "name": "A.P. Moller - Maersk", "domain": "maersk.com", "country_code": "DK", "fit": 90},
-        {"id": "dsv", "name": "DSV Global Transport", "domain": "dsv.com", "country_code": "DK", "fit": 87},
-        {"id": "asml", "name": "ASML Holding", "domain": "asml.com", "country_code": "NL", "fit": 97},
-        {"id": "se", "name": "Schneider Electric", "domain": "se.com", "country_code": "FR", "fit": 92},
-        {"id": "amazon", "name": "Amazon", "domain": "amazon.com", "country_code": "US", "fit": 98},
-    ]
-    out = []
-    for c in curated:
-        if iso and c["country_code"] != iso:
-            continue
-        out.append({
-            "id": c["id"],
-            "name": c["name"],
-            "domain": c["domain"],
-            "country": country_name_map.get(c["country_code"], c["country_code"]),
-            "fit": c["fit"],
-        })
-    return out if out else [
+    """Lightweight discovery list for the UI: Fit against the service ICP (default: first active service)."""
+    items = await _ranked(session, principal.org_id, service_id, country, None, 50)
+    return [
         {
-            "id": c["id"],
-            "name": c["name"],
-            "domain": c["domain"],
-            "country": country_name_map.get(c["country_code"], c["country_code"]),
-            "fit": c["fit"],
+            "id": i.domain,
+            "name": i.name,
+            "domain": i.domain,
+            "country": COUNTRY_NAMES.get(i.country_code or "", i.country_code),
+            "fit": round(i.fit_score),
+            "reason": i.reason,
+            "already_tracked": i.already_tracked,
         }
-        for c in curated
+        for i in items
     ]
 
 

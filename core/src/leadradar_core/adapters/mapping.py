@@ -214,9 +214,15 @@ def analysis_document(row: Document) -> ai.AnalysisDocument:
 
 
 def signal_row(
-    signal: ai.VerifiedSignal, company_id: UUID, service_id: UUID, org_id: UUID, run_id: UUID | None
+    signal: ai.VerifiedSignal,
+    company_id: UUID,
+    service_id: UUID,
+    org_id: UUID,
+    run_id: UUID | None,
+    status: str = "active",
 ) -> Signal:
-    return Signal(
+    derived = "derived" in signal.flags
+    row = Signal(
         org_id=org_id,
         company_id=company_id,
         service_id=service_id,
@@ -224,7 +230,7 @@ def signal_row(
         question_id=signal.question_id,
         question_key=signal.question_key,
         question_version=signal.question_version,
-        document_id=signal.document_id,
+        document_id=None if derived else signal.document_id,  # derived signals have no source document
         chunk_id=signal.chunk_id,
         category=signal.category,
         polarity=signal.polarity,
@@ -241,17 +247,20 @@ def signal_row(
         source_type=signal.source_type,
         source_name=signal.source_name,
         flags=sorted(signal.flags),
-        status="active",
+        status=status,
         model=signal.model,
         prompt_version=signal.prompt_version,
     )
+    if derived and isinstance(signal, ai.StoredSignal):
+        row.id = signal.id  # deterministic: a user's verdict on a NIS2/DORA signal survives recomputation
+    return row
 
 
 def stored_signal(row: Signal) -> ai.StoredSignal:
     return ai.StoredSignal(
         id=row.id,
         detected_at=row.detected_at,
-        status="active",
+        status="rejected_by_user" if row.status == "rejected_by_user" else "active",
         question_id=row.question_id,
         question_key=row.question_key,
         question_version=row.question_version,

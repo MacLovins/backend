@@ -66,7 +66,7 @@ async def _seed_accounts_from_csv(session, org_id: UUID, csv_text: str | None) -
         return {}
 
     reader = csv.DictReader(io.StringIO(csv_text))
-    created_count = 0
+    created_count = updated_count = 0
     companies = {}
 
     for row in reader:
@@ -81,6 +81,7 @@ async def _seed_accounts_from_csv(session, org_id: UUID, csv_text: str | None) -
 
         stmt = select(Company).where(Company.org_id == org_id, Company.domain == normalized)
         existing = (await session.execute(stmt)).scalar_one_or_none()
+        ind_ids = [s.strip() for s in row.get("industry_ids", "").split(";") if s.strip()]
 
         if not existing:
             emp = int(row["employees"]) if row.get("employees") and row["employees"].isdigit() else None
@@ -89,7 +90,6 @@ async def _seed_accounts_from_csv(session, org_id: UUID, csv_text: str | None) -
                 if row.get("revenue_eur") and row["revenue_eur"].isdigit()
                 else None
             )
-            ind_ids = [s.strip() for s in row.get("industry_ids", "").split(";") if s.strip()]
             tags = [s.strip() for s in row.get("tags", "").split(";") if s.strip()]
 
             company = Company(
@@ -113,10 +113,17 @@ async def _seed_accounts_from_csv(session, org_id: UUID, csv_text: str | None) -
             companies[normalized] = company
             created_count += 1
         else:
+            # seed rows are reference data: corrected industries reach already seeded companies too
+            if existing.origin == "csv" and ind_ids and list(existing.industry_ids or []) != ind_ids:
+                existing.industry_ids = ind_ids
+                updated_count += 1
             companies[normalized] = existing
 
     await session.commit()
-    typer.echo(f"Seeded accounts: {created_count} new companies imported (total {len(companies)})")
+    typer.echo(
+        f"Seeded accounts: {created_count} new companies imported, {updated_count} industries corrected "
+        f"(total {len(companies)})"
+    )
     return companies
 
 

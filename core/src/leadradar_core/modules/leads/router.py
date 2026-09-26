@@ -4,14 +4,18 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
+import leadradar_ai as ai
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
+from leadradar_core.adapters import mapping
 from leadradar_core.db.session import get_db_session
 from leadradar_core.modules.accounts.models import Company
 from leadradar_core.modules.accounts.schemas import CompanyOut
 from leadradar_core.modules.config.models import Service, SignalQuestion
+from leadradar_core.modules.feedback.models import Feedback
 from leadradar_core.modules.intelligence.models import Document, Signal
+from leadradar_core.modules.intelligence.service import load_bundle
 from leadradar_core.modules.leads.models import LeadScore
 from leadradar_core.modules.leads.schemas import (
     LeadDetail,
@@ -23,10 +27,17 @@ from leadradar_core.modules.leads.schemas import (
     SignalItem,
 )
 from leadradar_core.pagination import PaginatedResponse
-from sqlalchemy import func, or_, select
+from leadradar_core.settings import settings
+from leadradar_core.worker.deps import shared_llm
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/leads", tags=["leads"])
+
+
+def _flags(rule_hits: list | None) -> list[str]:
+    """Warnings for the list: names of the service's flag rules that fired (e.g. IT or software vendor)."""
+    return [h.get("name", "") for h in (rule_hits or []) if isinstance(h, dict) and h.get("action") == "flag"]
 
 
 @router.get("", response_model=PaginatedResponse[LeadListItem])
@@ -44,9 +55,27 @@ async def list_leads(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> PaginatedResponse[LeadListItem]:
+    # signal counters per (company, service) in one aggregate, joined before filtering and pagination
+    cutoff_7d = datetime.now(UTC) - timedelta(days=7)
+    counts = (
+        select(
+            Signal.company_id,
+            Signal.service_id,
+            func.count(Signal.id).label("total"),
+            func.count(Signal.id).filter(Signal.detected_at >= cutoff_7d).label("new_7d"),
+            func.max(func.coalesce(Signal.event_date, func.date(Signal.published_at))).label("last_at"),
+        )
+        .where(Signal.org_id == principal.org_id, Signal.status == "active")
+        .group_by(Signal.company_id, Signal.service_id)
+        .subquery()
+    )
     base_stmt = (
-        select(LeadScore, Company)
+        select(LeadScore, Company, counts.c.total, counts.c.new_7d, counts.c.last_at)
         .join(Company, LeadScore.company_id == Company.id)
+        .outerjoin(
+            counts,
+            and_(counts.c.company_id == LeadScore.company_id, counts.c.service_id == LeadScore.service_id),
+        )
         .where(
             LeadScore.org_id == principal.org_id,
             LeadScore.is_current == True,  # noqa: E712
@@ -63,78 +92,47 @@ async def list_leads(
         base_stmt = base_stmt.where(Company.industry_ids.any(industry))
     if min_priority is not None:
         base_stmt = base_stmt.where(LeadScore.priority >= min_priority)
+    if has_new is True:
+        base_stmt = base_stmt.where(counts.c.new_7d > 0)
     if q:
         search_filter = f"%{q.strip().lower()}%"
         base_stmt = base_stmt.where(
             or_(Company.name.ilike(search_filter), Company.domain.ilike(search_filter))
         )
 
-    # Count total matching query
-    count_stmt = select(func.count()).select_from(base_stmt.subquery())
-    total = (await session.execute(count_stmt)).scalar() or 0
+    total = (await session.execute(select(func.count()).select_from(base_stmt.subquery()))).scalar() or 0
 
-    # Sorting
-    if sort == "priority:asc":
-        stmt = base_stmt.order_by(LeadScore.priority.asc())
-    elif sort == "fit:desc":
-        stmt = base_stmt.order_by(LeadScore.fit.desc())
-    elif sort == "intent:desc":
-        stmt = base_stmt.order_by(LeadScore.intent.desc())
-    elif sort == "name:asc":
-        stmt = base_stmt.order_by(Company.name.asc())
-    else:  # priority:desc
-        stmt = base_stmt.order_by(LeadScore.priority.desc())
+    order = {
+        "priority:asc": (LeadScore.priority.asc(),),
+        "fit:desc": (LeadScore.fit.desc(),),
+        "intent:desc": (LeadScore.intent.desc(),),
+        "name:asc": (Company.name.asc(),),
+    }.get(sort, (LeadScore.priority.desc(), LeadScore.intent.desc(), LeadScore.fit.desc()))
+    stmt = base_stmt.order_by(*order, Company.name.asc()).offset((page - 1) * page_size).limit(page_size)
+    rows = (await session.execute(stmt)).all()
 
-    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-    res = await session.execute(stmt)
-    rows = res.all()
-
-    # Pre-fetch signal metrics for companies
-    cutoff_7d = datetime.now(UTC) - timedelta(days=7)
-    items: list[LeadListItem] = []
-    for score_row, comp_row in rows:
-        # Count active signals and recent signals
-        sig_count_stmt = select(
-            func.count(Signal.id),
-            func.count(Signal.id).filter(Signal.detected_at >= cutoff_7d),
-        ).where(
-            Signal.company_id == comp_row.id,
-            Signal.service_id == score_row.service_id,
-            Signal.status == "active",
+    items = [
+        LeadListItem(
+            company=CompanyOut.model_validate(comp_row),
+            service_id=score_row.service_id,
+            score=ScoreSummary(
+                priority=score_row.priority,
+                tier=score_row.tier,
+                fit=score_row.fit,
+                intent=score_row.intent,
+                risk=score_row.risk,
+                disqualified=score_row.disqualified,
+            ),
+            top_reasons=score_row.why_now or [],
+            flags=_flags(score_row.rule_hits),
+            signals_count=total_sigs or 0,
+            new_signals_7d=new_7d or 0,
+            last_signal_at=last_at.isoformat() if last_at else None,
+            analyzed_at=comp_row.last_analyzed_at,
         )
-        sig_counts = (await session.execute(sig_count_stmt)).one_or_none()
-        total_sigs = sig_counts[0] if sig_counts else 0
-        new_7d = sig_counts[1] if sig_counts else 0
-
-        if has_new is True and new_7d == 0:
-            continue
-
-        items.append(
-            LeadListItem(
-                company=CompanyOut.model_validate(comp_row),
-                service_id=score_row.service_id,
-                score=ScoreSummary(
-                    priority=score_row.priority,
-                    tier=score_row.tier,
-                    fit=score_row.fit,
-                    intent=score_row.intent,
-                    risk=score_row.risk,
-                    disqualified=score_row.disqualified,
-                ),
-                top_reasons=score_row.why_now or [],
-                flags=[],
-                signals_count=total_sigs,
-                new_signals_7d=new_7d,
-                analyzed_at=comp_row.last_analyzed_at,
-            )
-        )
-
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-    )
+        for score_row, comp_row, total_sigs, new_7d, last_at in rows
+    ]
+    return PaginatedResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/export.csv")
@@ -277,6 +275,18 @@ async def get_lead_detail(
             grouped_questions[q.id] = (q, [])
         grouped_questions[q.id][1].append(sig)
 
+    my_feedback = dict(
+        (
+            await session.execute(
+                select(Feedback.target_id, Feedback.verdict).where(
+                    Feedback.user_id == principal.user_id,
+                    Feedback.target_type == "signal",
+                    Feedback.target_id.in_([sig.id for sig, _ in sig_rows]),
+                )
+            )
+        ).all()
+    )
+
     # strength and points of each question as computed by the scoring engine (score.breakdown)
     contributions = {
         c.get("question_id"): c for c in ((score.breakdown or []) if score else []) if isinstance(c, dict)
@@ -308,6 +318,7 @@ async def get_lead_detail(
                         source_type=s.source_type,
                         event_date=str(s.event_date) if s.event_date else None,
                         flags=s.flags or [],
+                        my_feedback=my_feedback.get(s.id),
                     )
                     for s in sig_list
                 ],
@@ -399,55 +410,26 @@ async def generate_lead_outreach(
     if not service or service.org_id != principal.org_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
-    import leadradar_ai as ai
-    from leadradar_core.adapters import mapping
-    from leadradar_core.modules.intelligence.service import load_bundle
-    from leadradar_core.worker.deps import worker_context
-
     bundle = await load_bundle(session, service)
-
-    sig_stmt = (
-        select(Signal)
-        .where(
-            Signal.company_id == company_id,
-            Signal.service_id == service_id,
-            Signal.org_id == principal.org_id,
-            Signal.status == "active",
+    sig_rows = (
+        (
+            await session.execute(
+                select(Signal)
+                .where(
+                    Signal.company_id == company_id,
+                    Signal.service_id == service_id,
+                    Signal.org_id == principal.org_id,
+                    Signal.status == "active",
+                )
+                .order_by(Signal.confidence.desc())
+                .limit(5)
+            )
         )
-        .order_by(Signal.confidence.desc())
-        .limit(5)
+        .scalars()
+        .all()
     )
-    sig_rows = (await session.execute(sig_stmt)).scalars().all()
-
     profile = mapping.company_profile(company)
-    signals = [
-        ai.VerifiedSignal(
-            question_id=s.question_id,
-            question_key=s.question_key,
-            question_version=s.question_version,
-            category=s.category,
-            polarity=s.polarity,
-            document_id=s.document_id or s.id,
-            chunk_id=s.chunk_id,
-            url=s.url or "",
-            source_type=s.source_type if s.source_type in ai.contracts.SourceType.__args__ else "news",
-            source_name=s.source_name,
-            quote=s.quote,
-            quote_start=s.quote_start,
-            quote_end=s.quote_end,
-            summary=s.summary,
-            strength=s.strength if s.strength in ("weak", "moderate", "strong") else "moderate",
-            confidence=float(s.confidence),
-            reliability=float(s.reliability) if s.reliability is not None else 0.8,
-            event_date=s.event_date,
-            published_at=s.published_at,
-            flags=set(s.flags or []),
-            model=s.model or "unknown",
-            prompt_version=s.prompt_version or "extract_signals@v1",
-        )
-        for s in sig_rows
-    ]
-
+    signals = [mapping.stored_signal(s) for s in sig_rows]
     outreach_req = ai.OutreachRequest(
         channel=generate_in.channel
         if generate_in.channel in ("email", "linkedin_inmail", "call_script")
@@ -460,19 +442,15 @@ async def generate_lead_outreach(
         sender_title=generate_in.sender_title,
         sender_company=generate_in.sender_company,
     )
+    await session.commit()  # release the DB connection before the (bounded) LLM call
 
-    try:
-        await worker_context.start()
-        llm = worker_context.llm
-    except Exception:
-        llm = None
-
+    llm = shared_llm()
     if llm is not None:
-        draft = await ai.generate_outreach(llm, profile, bundle, signals, outreach_req)
+        draft = await ai.generate_outreach(
+            llm, profile, bundle, signals, outreach_req, timeout_s=settings.OUTREACH_TIMEOUT_S
+        )
     else:
-        from leadradar_ai.outreach.generator import fallback_draft
-
-        draft = fallback_draft(profile, bundle, signals, outreach_req)
+        draft = ai.fallback_draft(profile, bundle, signals, outreach_req)
 
     return OutreachDraftOut(
         channel=draft.channel,

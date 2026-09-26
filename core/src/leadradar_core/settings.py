@@ -24,6 +24,10 @@ class AppSettings(BaseSettings):
     # Hard limits around parser calls: resolve can hang on bot-protected sites
     ANALYSIS_RESOLVE_TIMEOUT_S: float = 60
     ANALYSIS_COLLECT_BUDGET_S: int = 90
+    # Outreach calls the LLM inside the HTTP request: bounded, then the template draft is returned
+    OUTREACH_TIMEOUT_S: float = 25
+    # Embedded worker (EMBEDDED_WORKER): at most this many company analyses run at once in the API process
+    EMBEDDED_MAX_CONCURRENCY: int = 2
     REFRESH_CRON: str = "0 */6 * * *"
 
     # Feature flags

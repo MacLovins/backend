@@ -102,3 +102,23 @@ class WorkerContext:
 
 
 worker_context = WorkerContext()
+_api_llm: ai.LLMClient | None = None
+
+
+def shared_llm() -> ai.LLMClient | None:
+    """The Gemini client for LLM calls made from API requests (outreach): the worker's one when it runs in
+    this process, else a lightweight one — without loading the embedding model. None without an API key."""
+    global _api_llm
+    if worker_context.llm is not None:
+        return worker_context.llm
+    if _api_llm is None:
+        try:
+            _api_llm = ai.GeminiClient.from_settings(
+                ai.LLMSettings(),
+                usage=SqlUsageSink(async_session_factory, settings.DEFAULT_ORG_ID),
+                cache=SqlLLMCache(async_session_factory, settings.DEFAULT_ORG_ID),
+            )
+        except ValueError as e:  # no API key configured
+            log.warning("llm_unavailable", error=str(e))
+            return None
+    return _api_llm

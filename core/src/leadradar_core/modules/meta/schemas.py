@@ -24,8 +24,20 @@ class LabelsOut(BaseModel):
     statuses: dict[str, str]
 
 
+class ModelUsageOut(BaseModel):
+    model: str
+    calls: int  # including cache hits
+    cache_hits: int = 0
+    errors: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    rpd_limit: int | None = None  # free-tier requests per day (LLM_LIMITS_JSON); None = not configured
+
+
 class UsageOut(BaseModel):
-    llm_calls_24h: int = 0
+    llm_calls_24h: int = 0  # real calls: cache hits excluded
     input_tokens_24h: int = 0
     output_tokens_24h: int = 0
     documents_scanned_24h: int = 0
+    by_model: list[ModelUsageOut] = []
+    documents_by_source: dict[str, int] = {}

@@ -13,6 +13,7 @@ from leadradar_core.adapters import mapping
 from leadradar_core.adapters.progress import publish
 from leadradar_core.db.session import async_session_factory
 from leadradar_core.modules.accounts.models import Company
+from leadradar_core.modules.activity.router import emit_event
 from leadradar_core.modules.config.models import Service, SignalQuestion
 from leadradar_core.modules.intelligence.service import load_bundle, load_bundles
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
@@ -85,6 +86,10 @@ async def _finish_if_complete(run: AnalysisRun, progress: dict) -> None:
                 {"status": status, "id": run.id},
             )
         ).first()
+        if updated:
+            await emit_event(
+                session, run.org_id, "run.finished", {"run_id": str(run.id), "status": status, **progress}
+            )
     if updated:  # only the task that closes the run announces it
         await _event(
             run, None, "run", status, f"Run {status}", {"status": status, **progress}, "run.finished"
@@ -95,22 +100,33 @@ async def _finish_if_complete(run: AnalysisRun, progress: dict) -> None:
 async def analyze_company(
     run_id: str, company_id: str, service_ids: list[str], mode: str = "incremental"
 ) -> str:
-    await worker_context.start()
-    async with async_session_factory() as session, session.begin():
+    async with async_session_factory() as session:
         run = await session.get(AnalysisRun, UUID(run_id))
-        company = await session.get(Company, UUID(company_id))
-        if run is None or company is None or run.status == "cancelled":
-            return "skipped"
-        if run.status == "pending":
-            run.status = "running"
-            run.started_at = datetime.now(UTC)
-        bundles = await load_bundles(session, run.org_id, [UUID(s) for s in service_ids])
-        profile = mapping.company_profile(company)
+    if run is None or run.status == "cancelled":
+        return "skipped"
 
-    inp = ai.AnalysisInput(run_id=run.id, company=profile, services=bundles, mode=mode, now=datetime.now(UTC))
-    graph = ai.build_analysis_graph(worker_context.analysis_deps(run.org_id))
+    # Everything after this point ends in a counted outcome: an error while preparing (worker start, missing
+    # company, invalid config) must fail this company, not leave the run in "running" forever.
     outcome, scores, message = "done", [], ""
+    event_company: UUID | None = UUID(company_id)
     try:
+        await worker_context.start()
+        async with async_session_factory() as session, session.begin():
+            company = await session.get(Company, UUID(company_id))
+            if company is None:
+                event_company = None  # run_event.company_id references company
+                raise LookupError(f"company {company_id} not found")
+            row = await session.get(AnalysisRun, run.id)
+            if row.status == "pending":
+                row.status = "running"
+                row.started_at = datetime.now(UTC)
+            bundles = await load_bundles(session, run.org_id, [UUID(s) for s in service_ids])
+            profile = mapping.company_profile(company)
+
+        inp = ai.AnalysisInput(
+            run_id=run.id, company=profile, services=bundles, mode=mode, now=datetime.now(UTC)
+        )
+        graph = ai.build_analysis_graph(worker_context.analysis_deps(run.org_id))
         output = await ai.run_analysis(graph, inp)
         scores = output.get("scores", [])
         failed = [e for e in output.get("errors", []) if e.service_id is not None]
@@ -135,7 +151,7 @@ async def analyze_company(
         "scores": [{"service_id": str(s.service_id), "priority": s.priority, "tier": s.tier} for s in scores],
     }
     await _event(
-        run, UUID(company_id), "company", outcome, message or f"Company {outcome}", data, "company.done"
+        run, event_company, "company", outcome, message or f"Company {outcome}", data, "company.done"
     )
     state = await _count(run.id, outcome)
     await _event(run, None, "run", "progress", "", state["progress"], "run.progress")

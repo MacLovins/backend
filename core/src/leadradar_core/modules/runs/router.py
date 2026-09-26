@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from leadradar_auth.dependencies import get_current_principal
 from leadradar_auth.schemas import Principal
+from leadradar_core.adapters.progress import sse_event_name
 from leadradar_core.db.session import get_db_session
 from leadradar_core.modules.runs.models import AnalysisRun, RunEvent
 from leadradar_core.modules.runs.schemas import RunCreate, RunOut
@@ -185,9 +186,11 @@ async def _stream_events(
     events = res.scalars().all()
     highest_id = last_event_id or 0
 
+    finished = False
     for ev in events:
         highest_id = max(highest_id, ev.id)
-        event_name = f"{ev.stage}.{ev.status}" if ev.stage and ev.status else "run.progress"
+        event_name = sse_event_name(ev.stage, ev.status)
+        finished = finished or event_name == "run.finished"
         data_payload = ev.payload or {
             "stage": ev.stage,
             "status": ev.status,
@@ -204,11 +207,12 @@ async def _stream_events(
     # Check if run is already in terminal state or test environment
     run = await session.get(AnalysisRun, run_id)
     if settings.ENV == "test" or not run or run.status in ("succeeded", "failed", "cancelled", "partial"):
-        yield ServerSentEvent(
-            id=str(highest_id + 1),
-            event="run.finished",
-            data={"status": run.status if run else "finished"},
-        )
+        if not finished:  # the replay already ended with run.finished otherwise
+            yield ServerSentEvent(
+                id=str(highest_id + 1),
+                event="run.finished",
+                data={"status": run.status if run else "finished"},
+            )
         return
 
     # 2. Redis pub/sub for real-time events

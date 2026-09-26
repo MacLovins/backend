@@ -1,15 +1,23 @@
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+
+Verdict = Literal["correct", "incorrect", "irrelevant"]
 
 
 class FeedbackIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    verdict: str  # correct / incorrect
-    service_id: UUID
+    # SPEC: correct / incorrect. "wrong" (the frontend's word) means incorrect; "irrelevant" = true but useless.
+    verdict: Verdict = Field(validation_alias=AliasChoices("verdict", "feedback"))
+    service_id: UUID = Field(validation_alias=AliasChoices("service_id", "serviceId"))
     reason: str | None = None
+
+    @field_validator("verdict", mode="before")
+    @classmethod
+    def _synonyms(cls, value: object) -> object:
+        return "incorrect" if value == "wrong" else value
 
 
 class FeedbackOut(BaseModel):

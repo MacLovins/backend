@@ -1,18 +1,26 @@
-from fastapi import APIRouter
-from leadradar_core.modules.meta.schemas import CountryOut, IndustryOut, LabelsOut, PresetOut, UsageOut
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
+
+import leadradar_ai as ai
+import leadradar_parser as parser
+from fastapi import APIRouter, Depends
+from leadradar_auth.dependencies import get_current_principal
+from leadradar_auth.schemas import Principal
+from leadradar_core.db.session import get_db_session
+from leadradar_core.modules.intelligence.models import Document
+from leadradar_core.modules.meta.models import LLMCall
+from leadradar_core.modules.meta.schemas import (
+    CountryOut,
+    IndustryOut,
+    LabelsOut,
+    ModelUsageOut,
+    PresetOut,
+    UsageOut,
+)
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/meta", tags=["meta"])
-
-DEFAULT_INDUSTRIES = [
-    IndustryOut(id="logistics", label="Logistics & Supply Chain"),
-    IndustryOut(id="manufacturing", label="Manufacturing & Industrial"),
-    IndustryOut(id="banking", label="Banking & Financial Services"),
-    IndustryOut(id="insurance", label="Insurance"),
-    IndustryOut(id="healthcare", label="Healthcare & Pharma"),
-    IndustryOut(id="retail", label="Retail & E-commerce"),
-    IndustryOut(id="telecom", label="Telecommunications"),
-    IndustryOut(id="energy", label="Energy & Utilities"),
-]
 
 DEFAULT_COUNTRIES = [
     CountryOut(code="DE", name="Germany", is_eu=True),
@@ -43,7 +51,8 @@ DEFAULT_PRESETS = [
 
 @router.get("/industries", response_model=list[IndustryOut])
 async def get_industries() -> list[IndustryOut]:
-    return DEFAULT_INDUSTRIES
+    """The parser taxonomy: the ids companies, ICPs, rules and NIS2/DORA derivation actually use."""
+    return [IndustryOut(id=i.id, label=i.label) for i in parser.industry_taxonomy()]
 
 
 @router.get("/countries", response_model=list[CountryOut])
@@ -81,5 +90,54 @@ async def get_labels() -> LabelsOut:
 
 
 @router.get("/usage", response_model=UsageOut)
-async def get_usage() -> UsageOut:
-    return UsageOut()
+async def get_usage(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UsageOut:
+    """LLM calls and tokens of the last 24 h by model against the free-tier limits (calls today count toward
+    the daily quota, which resets at midnight Pacific), and documents collected by source type (SPEC CO-21)."""
+    since = datetime.now(UTC) - timedelta(hours=24)
+    llm = ai.LLMSettings()
+    rows = (
+        await session.execute(
+            select(
+                LLMCall.model,
+                func.count(LLMCall.id),
+                func.count(LLMCall.id).filter(LLMCall.cache_hit.is_(True)),
+                func.count(LLMCall.id).filter(LLMCall.status.not_in(["ok", "cache_hit"])),
+                func.coalesce(func.sum(LLMCall.input_tokens), 0),
+                func.coalesce(func.sum(LLMCall.output_tokens), 0),
+            )
+            .where(LLMCall.org_id == principal.org_id, LLMCall.created_at >= since)
+            .group_by(LLMCall.model)
+        )
+    ).all()
+    by_model = [
+        ModelUsageOut(
+            model=model,
+            calls=calls,
+            cache_hits=hits,
+            errors=errors,
+            input_tokens=int(tokens_in),
+            output_tokens=int(tokens_out),
+            rpd_limit=llm.limits(model).rpd,
+        )
+        for model, calls, hits, errors, tokens_in, tokens_out in rows
+    ]
+    docs = dict(
+        (
+            await session.execute(
+                select(Document.source_type, func.count(Document.id))
+                .where(Document.org_id == principal.org_id, Document.fetched_at >= since)
+                .group_by(Document.source_type)
+            )
+        ).all()
+    )
+    return UsageOut(
+        llm_calls_24h=sum(m.calls - m.cache_hits for m in by_model),
+        input_tokens_24h=sum(m.input_tokens for m in by_model),
+        output_tokens_24h=sum(m.output_tokens for m in by_model),
+        documents_scanned_24h=sum(docs.values()),
+        by_model=by_model,
+        documents_by_source=docs,
+    )

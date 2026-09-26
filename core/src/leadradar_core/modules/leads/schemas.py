@@ -1,5 +1,4 @@
 from datetime import datetime
-from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -8,11 +7,12 @@ from pydantic import BaseModel
 
 
 class ScoreSummary(BaseModel):
-    priority: Decimal
+    # floats, not Decimal: pydantic serializes Decimal as a string, the card sends numbers
+    priority: float
     tier: str
-    fit: Decimal
-    intent: Decimal
-    risk: Decimal
+    fit: float
+    intent: float
+    risk: float
     disqualified: bool = False
 
 
@@ -33,12 +33,13 @@ class SignalItem(BaseModel):
     quote: str
     summary: str
     strength: str
-    confidence: Decimal
+    confidence: float
     url: str | None = None
     source_name: str
     source_type: str
     event_date: str | None = None
     flags: list[str] = []
+    my_feedback: str | None = None  # the current user's verdict: correct / incorrect / irrelevant
 
 
 class QuestionSignals(BaseModel):

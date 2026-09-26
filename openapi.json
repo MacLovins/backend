@@ -341,6 +341,7 @@
           "meta"
         ],
         "summary": "Get Industries",
+        "description": "The parser taxonomy: the ids companies, ICPs, rules and NIS2/DORA derivation actually use.",
         "operationId": "get_industries_api_v1_meta_industries_get",
         "responses": {
           "200": {
@@ -437,6 +438,7 @@
           "meta"
         ],
         "summary": "Get Usage",
+        "description": "LLM calls and tokens of the last 24 h by model against the free-tier limits (calls today count toward\nthe daily quota, which resets at midnight Pacific), and documents collected by source type (SPEC CO-21).",
         "operationId": "get_usage_api_v1_meta_usage_get",
         "responses": {
           "200": {
@@ -449,7 +451,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/services": {
@@ -1787,6 +1794,77 @@
         ]
       }
     },
+    "/api/v1/discovery": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "List Discovery Candidates",
+        "description": "Lightweight discovery list for the UI: Fit against the service ICP (default: first active service).",
+        "operationId": "list_discovery_candidates_api_v1_discovery_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Country"
+            }
+          },
+          {
+            "name": "service_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Service Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response List Discovery Candidates Api V1 Discovery Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/discovery/accept": {
       "post": {
         "tags": [
@@ -2645,6 +2723,7 @@
           "feedback"
         ],
         "summary": "Feedback Signal",
+        "description": "An incorrect or irrelevant signal drops out of scoring and the lead is rescored at once; correct\nrestores it. The verdict also feeds GET /quality.",
         "operationId": "feedback_signal_api_v1_signals__id__feedback_post",
         "security": [
           {
@@ -2761,6 +2840,7 @@
           "feedback"
         ],
         "summary": "Get Quality",
+        "description": "Precision of extracted signals from user verdicts (overall, by category, by source type) and the\nverifier's rejection statistics (SPEC CO-15).",
         "operationId": "get_quality_api_v1_quality_get",
         "security": [
           {
@@ -4098,6 +4178,11 @@
         "properties": {
           "verdict": {
             "type": "string",
+            "enum": [
+              "correct",
+              "incorrect",
+              "irrelevant"
+            ],
             "title": "Verdict"
           },
           "service_id": {
@@ -4620,6 +4705,55 @@
         ],
         "title": "LoginResponse"
       },
+      "ModelUsageOut": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "cache_hits": {
+            "type": "integer",
+            "title": "Cache Hits",
+            "default": 0
+          },
+          "errors": {
+            "type": "integer",
+            "title": "Errors",
+            "default": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "rpd_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rpd Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "calls"
+        ],
+        "title": "ModelUsageOut"
+      },
       "OutreachDraftOut": {
         "properties": {
           "channel": {
@@ -5056,8 +5190,7 @@
       "ScoreSummary": {
         "properties": {
           "priority": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Priority"
           },
           "tier": {
@@ -5065,18 +5198,15 @@
             "title": "Tier"
           },
           "fit": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Fit"
           },
           "intent": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Intent"
           },
           "risk": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Risk"
           },
           "disqualified": {
@@ -5354,8 +5484,7 @@
             "title": "Strength"
           },
           "confidence": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "number",
             "title": "Confidence"
           },
           "url": {
@@ -5395,6 +5524,17 @@
             "type": "array",
             "title": "Flags",
             "default": []
+          },
+          "my_feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "My Feedback"
           }
         },
         "type": "object",
@@ -5752,6 +5892,22 @@
             "type": "integer",
             "title": "Documents Scanned 24H",
             "default": 0
+          },
+          "by_model": {
+            "items": {
+              "$ref": "#/components/schemas/ModelUsageOut"
+            },
+            "type": "array",
+            "title": "By Model",
+            "default": []
+          },
+          "documents_by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Documents By Source",
+            "default": {}
           }
         },
         "type": "object",

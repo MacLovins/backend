@@ -43,6 +43,52 @@ MEANING_FIELDS = ("text", "polarity", "source_types", "recency_days", "category"
 SCORING_PARAMS = set(ai.ScoringProfile.model_fields) - {"id", "version"}
 
 
+def _unprocessable(e: ValidationError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=e.errors(include_url=False, include_context=False),
+    )
+
+
+def validate_question(fields: dict) -> None:
+    """The AI engine's QuestionConfig decides: an invalid polarity, weight, source type or recency is a 422
+    here instead of a 500 on the next rescore or analysis."""
+    try:
+        ai.QuestionConfig(
+            id=UUID(int=0),
+            version=1,
+            key=fields["key"],
+            text=fields["text"],
+            category=fields["category"],
+            polarity=fields["polarity"],
+            weight=fields["weight"],
+            source_types=set(fields["source_types"] or []),
+            recency_days=fields["recency_days"],
+        )
+    except ValidationError as e:
+        raise _unprocessable(e) from e
+
+
+def validate_icp(icp_in: ICPProfileIn) -> None:
+    nice = icp_in.nice_to_have
+    if nice is not None and not isinstance(nice.get("criteria", []), list):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=[{"loc": ["body", "nice_to_have", "criteria"], "msg": "must be a list of criteria"}],
+        )
+    try:
+        ai.ICPConfig(
+            countries=icp_in.countries,
+            industries_any=icp_in.industries_any,
+            employees_min=icp_in.employees_min,
+            employees_max=icp_in.employees_max,
+            revenue_min_eur=int(icp_in.revenue_min_eur) if icp_in.revenue_min_eur is not None else None,
+            nice_to_have=(nice or {}).get("criteria", []),
+        )
+    except ValidationError as e:
+        raise _unprocessable(e) from e
+
+
 def validate_rule(kind: str, condition: dict, action: str, cap_value: object) -> None:
     """The AI engine's own validation, so a broken rule is rejected here instead of skipped at scoring."""
     try:
@@ -56,7 +102,8 @@ def validate_rule(kind: str, condition: dict, action: str, cap_value: object) ->
         )
     except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors(include_url=False)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=e.errors(include_url=False, include_context=False),
         ) from e
 
 
@@ -183,6 +230,7 @@ async def create_question(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> SignalQuestionOut:
+    validate_question(q_in.model_dump())
     q = SignalQuestion(
         org_id=principal.org_id,
         service_id=id,
@@ -222,6 +270,11 @@ async def update_question(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
 
     changes = q_in.model_dump(exclude_unset=True)
+    current = {
+        f: getattr(q, f)
+        for f in ("key", "text", "category", "polarity", "weight", "source_types", "recency_days")
+    }
+    validate_question(current | {k: v for k, v in changes.items() if k in current})
     meaning_changed = any(
         field in changes and changes[field] != getattr(q, field) for field in MEANING_FIELDS
     )
@@ -301,6 +354,7 @@ async def put_icp(
     principal: Annotated[Principal, Depends(get_current_principal)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> ICPProfileOut:
+    validate_icp(icp_in)
     stmt = select(ICPProfile).where(ICPProfile.service_id == id, ICPProfile.org_id == principal.org_id)
     res = await session.execute(stmt)
     icp = res.scalar_one_or_none()
@@ -468,7 +522,8 @@ async def put_scoring_profile(
         ai.ScoringProfile(id=UUID(int=0), version=1, **profile_in.params)
     except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=e.errors(include_url=False)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=e.errors(include_url=False, include_context=False),
         ) from e
 
     # Set all existing profiles for this service to is_current=False

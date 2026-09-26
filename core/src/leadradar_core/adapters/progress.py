@@ -17,6 +17,19 @@ from leadradar_core.modules.runs.models import RunEvent
 log = get_logger(__name__)
 
 
+RUN_TERMINAL = ("succeeded", "partial", "failed", "cancelled")
+
+
+def sse_event_name(stage: str | None, status: str | None) -> str:
+    """The SSE event of a run_event row — the same name live (Redis) and on replay (SPEC CO-10):
+    run.progress · run.finished · company.done · company.stage."""
+    if stage == "run" or stage is None:
+        return "run.finished" if status in RUN_TERMINAL else "run.progress"
+    if stage == "company":
+        return "company.done"
+    return "company.stage"
+
+
 def event_payload(event: ai.ProgressEvent) -> dict[str, Any]:
     return {
         "company_id": str(event.company_id),
