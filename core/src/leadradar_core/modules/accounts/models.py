@@ -46,3 +46,5 @@ class Company(Base, CoreTableMixin):
     is_tracked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hubspot_company_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    hubspot_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

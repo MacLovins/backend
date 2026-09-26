@@ -70,6 +70,8 @@ class CompanyOut(BaseModel):
     is_tracked: bool
     resolved_at: datetime | None
     last_analyzed_at: datetime | None
+    hubspot_company_id: str | None = None
+    hubspot_synced_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

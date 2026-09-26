@@ -3346,6 +3346,109 @@
           }
         }
       }
+    },
+    "/api/v1/integrations/hubspot": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Hubspot Status",
+        "description": "The frontend shows the \"Send to HubSpot\" button only when this is enabled.",
+        "operationId": "hubspot_status_api_v1_integrations_hubspot_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSpotStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/leads/{company_id}/push/hubspot": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Push To Hubspot",
+        "description": "Creates or updates the company in HubSpot with the LeadRadar score and adds a note with the evidence.\n\n409: the lead has no score yet. 503: the integration is not configured or HubSpot rate-limits us.\n502: HubSpot rejected the token or the request (the message says what).",
+        "operationId": "push_to_hubspot_api_v1_leads__company_id__push_hubspot_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "company_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Company Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/HubSpotPushIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Push In"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HubSpotPushOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3873,6 +3976,29 @@
               }
             ],
             "title": "Last Analyzed At"
+          },
+          "hubspot_company_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hubspot Company Id"
+          },
+          "hubspot_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hubspot Synced At"
           },
           "created_at": {
             "type": "string",
@@ -4965,6 +5091,78 @@
           "withdrawn"
         ],
         "title": "FeedbackWithdrawOut"
+      },
+      "HubSpotPushIn": {
+        "properties": {
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          }
+        },
+        "type": "object",
+        "title": "HubSpotPushIn"
+      },
+      "HubSpotPushOut": {
+        "properties": {
+          "hubspot_company_id": {
+            "type": "string",
+            "title": "Hubspot Company Id"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created"
+          },
+          "note_id": {
+            "type": "string",
+            "title": "Note Id"
+          },
+          "record_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Url"
+          },
+          "synced_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Synced At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hubspot_company_id",
+          "created",
+          "note_id",
+          "record_url",
+          "synced_at"
+        ],
+        "title": "HubSpotPushOut"
+      },
+      "HubSpotStatus": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "HubSpotStatus"
       },
       "ICPProfileIn": {
         "properties": {
