@@ -72,6 +72,8 @@ class CompanyOut(BaseModel):
     last_analyzed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # the current user has an active alert rule scoped to this company (POST /companies/{id}/watch)
+    watched: bool = False
 
 
 class ImportDuplicateOut(BaseModel):

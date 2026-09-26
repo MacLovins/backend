@@ -48,8 +48,12 @@ def app_settings(**kw) -> AppSettings:
 
 
 def test_addons_are_off_by_default_and_need_credentials():
-    assert integrations.enabled_consumers(app_settings()) == []
-    assert integrations.enabled_consumers(app_settings(FEATURE_ALERTS=True, FEATURE_HUBSPOT=True)) == []
+    # user-defined alert rules are always on (in-app notifications need no credentials)
+    assert [c.name for c in integrations.enabled_consumers(app_settings())] == ["alerts.rules"]
+    assert [
+        c.name
+        for c in integrations.enabled_consumers(app_settings(FEATURE_ALERTS=True, FEATURE_HUBSPOT=True))
+    ] == ["alerts.rules"]
     names = [
         c.name
         for c in integrations.enabled_consumers(
@@ -65,7 +69,7 @@ def test_addons_are_off_by_default_and_need_credentials():
             )
         )
     ]
-    assert names == ["alerts.telegram", "alerts.email", "hubspot"]
+    assert names == ["alerts.rules", "alerts.telegram", "alerts.email", "hubspot"]
 
 
 # --- alerts ------------------------------------------------------------------------------------

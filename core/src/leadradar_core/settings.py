@@ -41,6 +41,7 @@ class AppSettings(BaseSettings):
     # Scheduler (CO-22) and outbox dispatcher (CO-17)
     RESUME_PAUSED_CRON: str = "*/15 * * * *"
     DISPATCH_EVENTS_CRON: str = "* * * * *"
+    JOBS_ALERTS_CRON: str = "0 * * * *"  # jobs_threshold alert rules are evaluated hourly
     REFRESH_MIN_AGE_H: float = 5  # tracked companies analyzed more recently are skipped by refresh_tracked
     EVENTS_DISPATCH_BATCH: int = 100
     EVENTS_MAX_ATTEMPTS: int = 5  # after that a failing event is marked processed with last_error
