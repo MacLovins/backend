@@ -181,10 +181,22 @@ def _fit(candidate: dict, icp: ai.ICPConfig) -> ai.FitResult:
     return ai.fit_score(profile, icp)
 
 
+_SHORT = {
+    "countries": "target country",
+    "industries_any": "target industry",
+    "country_in": "preferred country",
+    "industry_in": "preferred industry",
+    "tag_in": "tagged",
+}
+
+
 def _reason(fit: ai.FitResult, source: str) -> str:
-    matched = [d["label"] for d in fit.details if d["status"] in ("pass", "match")]
-    text = "; ".join(matched[:3]) or "Passes the ICP filters"
-    return f"{text} ({source})"
+    """Short: which ICP criteria matched (long value lists stay in the ICP screen)."""
+    matched = [
+        _SHORT.get(d["criterion"], d["label"]) for d in fit.details if d["status"] in ("pass", "match")
+    ]
+    text = ", ".join(dict.fromkeys(matched)) or "passes the ICP filters"
+    return f"{text[0].upper()}{text[1:]} ({source})"
 
 
 async def _service_icp(session: AsyncSession, org_id, service_id) -> ai.ICPConfig:
