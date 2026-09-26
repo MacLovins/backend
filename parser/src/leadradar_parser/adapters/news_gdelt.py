@@ -144,10 +144,10 @@ class GdeltAdapter:
                 _last_request_at = time.monotonic()
                 pause = BREAKER_PAUSES_S[min(_consecutive_429, len(BREAKER_PAUSES_S) - 1)]
                 _consecutive_429 += 1
-                _blocked_until = _last_request_at + max(pause, exc.retry_after_s or 0)
-                raise SourceRateLimited(
-                    f"GDELT rate limited; source paused for {pause}s", int(_blocked_until - _last_request_at)
-                ) from exc
+                pause_s = max(pause, exc.retry_after_s or 0)
+                _blocked_until = _last_request_at + pause_s
+                # report the configured pause, not a float subtraction that rounds down to pause - 1
+                raise SourceRateLimited(f"GDELT rate limited; source paused for {pause}s", pause_s) from exc
             except BaseException:
                 _last_request_at = time.monotonic()
                 raise
