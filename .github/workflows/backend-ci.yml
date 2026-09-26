@@ -1,0 +1,77 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: leadradar
+          POSTGRES_USER: leadradar
+          POSTGRES_PASSWORD: leadradar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U leadradar -d leadradar"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      APP_ENV: test
+      APP_DATABASE_URL: postgresql+asyncpg://leadradar:leadradar@127.0.0.1:5432/leadradar
+      APP_REDIS_URL: redis://127.0.0.1:6379/0
+      UV_PYTHON: "3.12"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6.4.3
+        with:
+          version: "0.10.2"
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-packages --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Import boundaries
+        run: uv run lint-imports
+
+      - name: Migrations
+        run: uv run --package leadradar-core alembic -c core/alembic.ini upgrade head
+
+      - name: Tests (incl. OpenAPI snapshot)
+        run: uv run pytest -q -m "not live"

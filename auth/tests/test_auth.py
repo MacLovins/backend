@@ -37,3 +37,13 @@ def test_jwt_token_encode_decode():
     assert payload["email"] == "sales@leadradar.ai"
     assert payload["role"] == "sales"
     assert payload["name"] == "Sales Rep"
+
+
+def test_insecure_jwt_secret_reason():
+    from leadradar_auth import insecure_jwt_secret_reason
+    from leadradar_auth.settings import DEV_JWT_SECRET
+
+    assert insecure_jwt_secret_reason(DEV_JWT_SECRET) == "known default value"
+    assert insecure_jwt_secret_reason("") == "empty"
+    assert insecure_jwt_secret_reason("x" * 31) is not None
+    assert insecure_jwt_secret_reason("a3f1" * 16) is None

@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,11 +74,23 @@ class CompanyOut(BaseModel):
     updated_at: datetime
 
 
+class ImportDuplicateOut(BaseModel):
+    """A row whose domain already appeared earlier in the same file."""
+
+    row: int
+    first_row: int
+    domain: str
+    action: Literal["merge", "skip"]
+
+
 class CompanyImportReport(BaseModel):
     created: int = 0
-    updated: int = 0
-    skipped: int = 0
+    updated: int = 0  # existing companies where at least one empty field was filled
+    skipped: int = 0  # rows that created or changed nothing (invalid, duplicate, no new data)
     errors: list[str] = []
+    total_rows: int = 0
+    warnings: list[str] = []  # row-level issues that did not block the row (unknown country, industry...)
+    duplicates: list[ImportDuplicateOut] = []
 
 
 class DocumentOut(BaseModel):
